@@ -105,6 +105,7 @@
         <span class="m3-field-label">Tarjeta</span>
         <select name="kind" class="m3-select">
           {% for t in postable %}<option value="{{ t.slug }}">{{ t.label }}</option>{% endfor %}
+          <option value="{{ datos_slot }}">{{ datos_label }} (portada, un dato por producto, cierre)</option>
           <option value="{{ carousel_slot }}">{{ carousel_label }} (portada, cómo leer, dato, cierre)</option>
         </select>
       </label>

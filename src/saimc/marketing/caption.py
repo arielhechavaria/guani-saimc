@@ -8,6 +8,8 @@ de partida. Privacidad: lista fecha y precio de cada anuncio, y nada más.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from saimc.marketing.cards import ComoSeMovioCard, DatoDelDiaCard, DeDondeSaleCard
 from saimc.marketing.context import CardType
 
@@ -104,3 +106,19 @@ def with_hashtags(cuerpo: str) -> str:
     if len(cuerpo) > lugar:
         cuerpo = cuerpo[: lugar - 1].rstrip() + "…"
     return cuerpo + cola
+
+
+def datos_caption(products: Sequence[str]) -> str:
+    """El texto del carrusel de datos diario. Nombra los productos que lleva y
+    nada más: sin cifras, que viven en las diapositivas. Así no hay nada que
+    escribir a mano ni que se pueda desfasar de la imagen."""
+    nombres = ", ".join(products)
+    cuerpo = "\n\n".join(
+        [
+            f"Los datos del día: {nombres}. Desliza para ver el rango y la mediana de cada "
+            "uno, provincia por provincia.",
+            _FUENTE,
+            "Mándaselo a quien hace las compras.",
+        ]
+    )
+    return with_hashtags(cuerpo)

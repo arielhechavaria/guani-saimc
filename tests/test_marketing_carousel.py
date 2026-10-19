@@ -405,12 +405,11 @@ class TestContador:
 
         approve(session, post, images_dir=tmp_path, render=render)
 
-        # Orden: cómo leer, portada, dato del día, cierre, cierre. «Dato del día»
-        # no tiene contador en su diseño; las otras cuatro dicen su lugar real.
+        # Orden: cómo leer, portada, dato del día, cierre, cierre. Todas dicen
+        # su lugar real, también «Dato del día» (desde el carrusel de datos).
         assert len(render.htmls) == 5
-        for n in (1, 2, 4, 5):
+        for n in (1, 2, 3, 4, 5):
             assert f">{n} / 5<" in render.htmls[n - 1]
-        assert " / 5<" not in render.htmls[2]
         assert not any("/ 4<" in html for html in render.htmls)
         assert "EJEMPLO ILUSTRATIVO" in render.htmls[0]
 

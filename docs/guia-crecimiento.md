@@ -231,10 +231,10 @@ cuando alguien pega un enlace del sitio.
 
 | # | Pieza | Medida | Paso del embudo | Cuándo | De dónde sale |
 |---|---|---|---|---|---|
-| 1 | **Dato del día** | 1080×1350 (4:5) | Descubrir | Casi todos los días | Lote, todos los días |
+| 1 | **Datos del día** (carrusel: portada → un «Dato del día» por producto con datos, hasta 4 → cierre) | 1080×1350 (4:5) | Descubrir | Todos los días | Lote, todos los días, en un solo borrador |
 | 2 | **Cómo se movió** | 1080×1350 | Volver | Lunes | Lote, los lunes |
 | 3 | **De dónde sale este precio** | 1080×1350 | Visitar / confianza | Jueves | Lote, los jueves |
-| 4 | **Carrusel** (portada → cómo leer → dato → cierre) | 1080×1350 | Descubrir y volver | Miércoles | Lote, los miércoles, en un solo borrador |
+| 4 | **Carrusel** (portada → cómo leer → dato → cierre) | 1080×1350 | Descubrir y volver | A mano | `/marketing`, a mano (ya no sale del lote desde el 2026-10-19: «cómo leer rango y mediana» lo cubre la lección educativa) |
 | 5 | **De los grupos a la cifra** | 1080×1350 | Confianza | Una vez, fijada arriba del perfil | `/marketing`, a mano |
 | 6 | **El video de la landing** (comercial «Cómo se escoge el arroz») | Vertical | Descubrir y confianza | Una vez, como Reel fijado | `static/landing/guani-flujo.mp4` (`docs/concepto-comercial-guani.md`) |
 | 7 | **Story de precalentamiento** | 1080×1920 (9:16) | Volver | La víspera de algo nuevo | `/marketing`, a mano |
@@ -244,18 +244,19 @@ cuando alguien pega un enlace del sitio.
 
 Notas por pieza:
 
-- **Dato del día.** Es la pieza de descubrimiento. El texto repite la
-  respuesta en una línea («Aceite 1 L en La Habana: se pide entre X y Y CUP»)
-  y termina con un pedido de envío: «Mándaselo a quien hace las compras».
+- **Datos del día.** Es la pieza de descubrimiento: un carrusel con una
+  diapositiva por producto con datos. El texto nombra los productos (sin
+  cifras: viven en las diapositivas) y termina con un pedido de envío:
+  «Mándaselo a quien hace las compras».
 - **Cómo se movió.** Es la cita fija. Siempre el lunes, siempre a la misma
   hora: eso es lo que hace volver.
 - **De dónde sale este precio.** Es la que ningún competidor tiene (`spec.md`
   §5). **Antes de aprobarla, mírala entera:** no puede aparecer ningún
   teléfono, nombre de vendedor, grupo ni canal (`spec.md` §10.6). Si aparece
   algo así, no se publica y es un error a corregir en el código.
-- **Carrusel.** El lote lo arma en un solo borrador con sus cuatro
-  diapositivas; para sumar un segundo «Dato del día», agrégalo en el editor
-  (hasta 10 diapositivas). La lámina «cómo leer» lleva cifras de ejemplo con
+- **Carrusel.** Ya no lo arma el lote: se crea a mano desde «Nueva» con sus
+  cuatro diapositivas; para sumar un segundo «Dato del día», agrégalo en el
+  editor (hasta 10 diapositivas). La lámina «cómo leer» lleva cifras de ejemplo con
   el rótulo «EJEMPLO ILUSTRATIVO»: no lo tapes. Los carruseles fueron el
   formato con más interacción por seguidor en 2025: 0,55 %, contra 0,52 % de
   los Reels y 0,37 % de la imagen sola
@@ -284,8 +285,8 @@ Notas por pieza:
 ### La semana tipo
 
 El lote crea los borradores con este ritmo (`WEEKLY_CARDS` en
-`src/saimc/marketing/daily.py`): «Dato del día» y «Educativo» todos los días,
-más «Cómo se movió» los lunes, el carrusel los miércoles y «De dónde sale este precio» los
+`src/saimc/marketing/daily.py`): «Datos del día» (carrusel) y «Educativo» todos
+los días, más «Cómo se movió» los lunes y «De dónde sale este precio» los
 jueves. No hace falta publicar todo lo que el lote crea: la semana tipo es
 esta, y lo que sobra se descarta (el «Educativo» diario no figura en la
 tabla: se publica los días que haya tiempo).
@@ -293,11 +294,11 @@ tabla: se publica los días que haya tiempo).
 | Día | Feed | Stories | Tiempo |
 |---|---|---|---|
 | Lunes | **Cómo se movió** | Recuerda la pieza del día | 20 min + 30 min de revisión semanal |
-| Martes | Dato del día | — | 10 min |
-| Miércoles | **Carrusel** | Encuesta: «¿Qué producto miramos el lunes?» | 30 min |
+| Martes | Datos del día | — | 10 min |
+| Miércoles | Datos del día | Encuesta: «¿Qué producto miramos el lunes?» | 30 min |
 | Jueves | **De dónde sale este precio** | — | 15 min (incluye revisar privacidad) |
-| Viernes | Dato del día | — | 10 min |
-| Sábado | — (o Dato del día si la semana fue floja) | Respuestas a las preguntas de la semana | 10 min |
+| Viernes | Datos del día | — | 10 min |
+| Sábado | — (o Datos del día si la semana fue floja) | Respuestas a las preguntas de la semana | 10 min |
 | Domingo | Descanso | **Story de precalentamiento** del lunes | 5 min |
 
 Son **5 publicaciones de feed por semana**. Buffer, sobre unos 2 millones de
@@ -448,7 +449,7 @@ mano.
 | 1 | Perfil con la marca (sin nombre personal), cuenta profesional, biografía de la vara y avatar | El perfil se entiende sin leer nada más |
 | 1 | Publicar el video de la landing como Reel y fijarlo | Aparece arriba del perfil |
 | 2 | Primer «Dato del día» | Publicado con texto y pedido de envío |
-| 3 | «De los grupos a la cifra» (o el carrusel, si es miércoles) y fijarla | Fijada junto al video |
+| 3 | «De los grupos a la cifra» (o los datos del día, si es miércoles) y fijarla | Fijada junto al video |
 | 4 | «De dónde sale este precio», revisada a ojo por privacidad antes de aprobarla | Sin teléfonos, nombres, grupos ni canales a la vista |
 | 5 | «Dato del día» | — |
 | 6 | Guardar las tres respuestas en el teléfono | — |

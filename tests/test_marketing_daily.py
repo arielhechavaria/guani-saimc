@@ -23,6 +23,7 @@ from saimc.marketing.daily import (
     RETENTION_DAYS,
     candidate_order,
     cards_for_day,
+    create_datos_draft,
     havana_today,
     main,
     purge_old,
@@ -60,13 +61,13 @@ def _kind(slug: str):
 @pytest.mark.parametrize(
     ("dia", "esperado"),
     [
-        (date(2026, 10, 19), ("dato-del-dia", "educativo", "como-se-movio")),  # lunes
-        (date(2026, 10, 20), ("dato-del-dia", "educativo")),  # martes
-        (date(2026, 10, 21), ("dato-del-dia", "educativo", "carrusel")),  # miércoles
-        (date(2026, 10, 22), ("dato-del-dia", "educativo", "de-donde-sale")),  # jueves
-        (date(2026, 10, 23), ("dato-del-dia", "educativo")),  # viernes
-        (date(2026, 10, 24), ("dato-del-dia", "educativo")),  # sábado
-        (date(2026, 10, 25), ("dato-del-dia", "educativo")),  # domingo
+        (date(2026, 10, 19), ("datos", "educativo", "como-se-movio")),  # lunes
+        (date(2026, 10, 20), ("datos", "educativo")),  # martes
+        (date(2026, 10, 21), ("datos", "educativo")),  # miércoles
+        (date(2026, 10, 22), ("datos", "educativo", "de-donde-sale")),  # jueves
+        (date(2026, 10, 23), ("datos", "educativo")),  # viernes
+        (date(2026, 10, 24), ("datos", "educativo")),  # sábado
+        (date(2026, 10, 25), ("datos", "educativo")),  # domingo
     ],
 )
 def test_cada_dia_de_la_semana_toca_lo_que_dice_el_plan(dia: date, esperado: tuple) -> None:
@@ -199,24 +200,23 @@ def _posts(session: Session) -> list[MarketingPost]:
     return list(session.scalars(select(MarketingPost).order_by(MarketingPost.batch_slot)))
 
 
-def test_un_lunes_crea_los_borradores_de_dato_del_dia_y_como_se_movio(
+def test_un_lunes_crea_los_borradores_de_datos_educativo_y_como_se_movio(
     session: Session, datos: None, tmp_path: Path
 ) -> None:
     # Frijol no tiene anuncios: cualquiera sea el día en que la rotación
-    # arranque por él, el borrador sale de Arroz, que sí tiene datos.
+    # arranque por él, el carrusel sale solo con Arroz, que sí tiene datos.
     reporte = run_daily(session, LUNES, tmp_path, execute=True)
 
     posts = _posts(session)
     assert [(p.batch_slot, p.status, p.origin, p.planned_for) for p in posts] == [
         ("como-se-movio", PostStatus.DRAFT, PostOrigin.BATCH, LUNES),
-        ("dato-del-dia", PostStatus.DRAFT, PostOrigin.BATCH, LUNES),
+        ("datos", PostStatus.DRAFT, PostOrigin.BATCH, LUNES),
         ("educativo", PostStatus.DRAFT, PostOrigin.BATCH, LUNES),
     ]
-    datos_posts = [p for p in posts if p.batch_slot != "educativo"]
-    assert all(p.slides[0].card_slug == p.batch_slot for p in datos_posts)
+    como = posts[0]
+    assert como.slides[0].card_slug == "como-se-movio"
     # Las cifras con tope en el día anterior, como antes.
-    assert {p.slides[0].params["data_through"] for p in datos_posts} == {"2026-10-18"}
-    assert {p.slides[0].params["product"] for p in datos_posts} == {"Arroz"}
+    assert como.slides[0].params["data_through"] == "2026-10-18"
     assert [c.estado for c in reporte.cards] == ["creada", "creada", "creada"]
     # Ya no rasteriza: ni PNG ni JPEG en disco.
     assert not any(tmp_path.rglob("*.png")) and not any(tmp_path.rglob("*.jpg"))
@@ -231,47 +231,67 @@ def test_un_jueves_crea_de_donde_sale_con_una_provincia_con_anuncios(
     assert donde.slides[0].params["province"] in ("La Habana", "Santiago de Cuba")
 
 
-def test_un_miercoles_crea_un_solo_borrador_de_carrusel_con_cuatro_diapositivas(
+def test_el_turno_de_datos_es_un_carrusel_de_portada_un_dato_por_producto_y_cierre(
     session: Session, datos: None, tmp_path: Path
 ) -> None:
-    """La semana tipo de la guía: portada → cómo leer → datos → cierre."""
+    """Solo Arroz tiene datos (Frijol es piloto sin anuncios): se salta."""
     reporte = run_daily(session, MIERCOLES, tmp_path, execute=True)
 
-    carrusel = next(p for p in _posts(session) if p.batch_slot == "carrusel")
+    carrusel = next(p for p in _posts(session) if p.batch_slot == "datos")
     assert carrusel.format == "carousel"
     assert carrusel.status == PostStatus.DRAFT
     assert carrusel.origin == PostOrigin.BATCH
-    assert [(s.position, s.card_slug) for s in carrusel.slides] == [
-        (1, "carrusel-portada"),
-        (2, "carrusel-consejo"),
-        (3, "dato-del-dia"),
-        (4, "carrusel-cierre"),
+    assert [(s.position, s.card_slug, s.params["product"]) for s in carrusel.slides] == [
+        (1, "datos-portada", None),
+        (2, "dato-del-dia", "Arroz"),
+        (3, "carrusel-cierre", None),
     ]
-    assert carrusel.slides[2].params == {
-        "product": "Arroz", "province": None, "data_through": "2026-10-20"
-    }
-    assert ("carrusel", "creada") in [(c.slug, c.estado) for c in reporte.cards]
-    assert len(_posts(session)) == 3  # el carrusel, el «Dato del día» y el educativo
+    assert {s.params["data_through"] for s in carrusel.slides} == {"2026-10-20"}
+    assert all(s.params["province"] is None for s in carrusel.slides)
+    assert (reporte.cards[0].slug, reporte.cards[0].estado, reporte.cards[0].product) == (
+        "datos", "creada", "Arroz"
+    )
+    assert len(_posts(session)) == 2  # el carrusel de datos y el educativo
 
 
-def test_el_carrusel_del_miercoles_no_se_duplica(
+def test_el_carrusel_de_datos_no_se_duplica(
     session: Session, datos: None, tmp_path: Path
 ) -> None:
     run_daily(session, MIERCOLES, tmp_path, execute=True)
     reporte = run_daily(session, MIERCOLES, tmp_path, execute=True)
 
-    assert [p.batch_slot for p in _posts(session)].count("carrusel") == 1
-    assert ("carrusel", "ya existía") in [(c.slug, c.estado) for c in reporte.cards]
+    assert [p.batch_slot for p in _posts(session)].count("datos") == 1
+    assert ("datos", "ya existía") in [(c.slug, c.estado) for c in reporte.cards]
 
 
-def test_sin_datos_el_carrusel_tampoco_se_crea(session: Session, tmp_path: Path) -> None:
-    """Sin una cifra que mostrar, el carrusel sería solo branding: no se crea."""
+@pytest.mark.parametrize("viejo", ["dato-del-dia", "carrusel"])
+def test_un_turno_viejo_del_mismo_dia_cubre_el_de_datos(
+    session: Session, datos: None, tmp_path: Path, viejo: str
+) -> None:
+    """La corrida de las 06:00 anterior al deploy dejó el turno viejo: el lote
+    no agrega un carrusel de datos encima (decisión: ver `LEGACY_DATOS_SLOTS`)."""
+    create_draft(
+        session, card_slug="dato-del-dia", planned_for=MIERCOLES, product="Arroz",
+        province=None, data_through=MIERCOLES - timedelta(days=1),
+        origin=PostOrigin.BATCH, batch_slot=viejo,
+    )
+    session.commit()
+
+    reporte = run_daily(session, MIERCOLES, tmp_path, execute=True)
+
+    assert ("datos", "ya existía") in [(c.slug, c.estado) for c in reporte.cards]
+    assert "datos" not in [p.batch_slot for p in _posts(session)]
+
+
+def test_sin_datos_el_carrusel_de_datos_no_se_crea_ni_una_portada_sola(
+    session: Session, tmp_path: Path
+) -> None:
     session.add(Product(name="Arroz", category="granos", unit="lb", aliases=[], is_pilot=True))
     session.commit()
 
     reporte = run_daily(session, MIERCOLES, tmp_path, execute=True)
 
-    assert ("carrusel", "sin datos") in [(c.slug, c.estado) for c in reporte.cards]
+    assert ("datos", "sin datos") in [(c.slug, c.estado) for c in reporte.cards]
     # Lo único que sale sin datos es el educativo, que es texto fijo.
     assert [p.batch_slot for p in _posts(session)] == ["educativo"]
 
@@ -291,7 +311,7 @@ def test_un_borrador_descartado_no_se_vuelve_a_crear(
     session: Session, datos: None, tmp_path: Path
 ) -> None:
     run_daily(session, LUNES, tmp_path, execute=True)
-    dato = next(p for p in _posts(session) if p.batch_slot == "dato-del-dia")
+    dato = next(p for p in _posts(session) if p.batch_slot == "datos")
     discard(dato, images_dir=tmp_path)
     session.commit()
 
@@ -319,9 +339,9 @@ def test_si_otra_corrida_lo_crea_en_el_medio_dice_ya_existia(
     session: Session, datos: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """La carrera: la consulta previa no lo ve, pero la base sí lo tiene."""
-    create_draft(
-        session, card_slug="dato-del-dia", planned_for=LUNES, product="Arroz", province=None,
-        data_through=LUNES - timedelta(days=1), origin=PostOrigin.BATCH, batch_slot="dato-del-dia",
+    create_datos_draft(
+        session, LUNES, ["Arroz"], data_through=LUNES - timedelta(days=1),
+        origin=PostOrigin.BATCH, batch_slot="datos",
     )
     session.commit()
     real = daily_module._exists
@@ -329,7 +349,7 @@ def test_si_otra_corrida_lo_crea_en_el_medio_dice_ya_existia(
 
     def _ciega_la_primera_vez(db: Session, day: date, slot: str) -> bool:
         llamadas.append(slot)
-        if slot == "dato-del-dia" and llamadas.count(slot) == 1:
+        if slot == "datos" and llamadas.count(slot) == 1:
             return False
         return real(db, day, slot)
 
@@ -339,8 +359,8 @@ def test_si_otra_corrida_lo_crea_en_el_medio_dice_ya_existia(
 
     assert reporte.cards[0].estado == "ya existía"
     # La segunda consulta es la del `except`: la carrera sí pasó por el savepoint.
-    assert llamadas.count("dato-del-dia") == 2
-    assert len([p for p in _posts(session) if p.batch_slot == "dato-del-dia"]) == 1
+    assert llamadas.count("datos") == 2
+    assert len([p for p in _posts(session) if p.batch_slot == "datos"]) == 1
     # El otro tipo del lunes se creó igual: el savepoint deshizo solo el repetido.
     assert reporte.cards[2].estado == "creada"
 
@@ -361,7 +381,7 @@ def test_otro_dia_si_crea_los_suyos(session: Session, datos: None, tmp_path: Pat
     run_daily(session, LUNES, tmp_path, execute=True)
     run_daily(session, LUNES + timedelta(days=1), tmp_path, execute=True)
 
-    assert len(_posts(session)) == 5  # lunes: 3; martes: «Dato del día» y educativo
+    assert len(_posts(session)) == 5  # lunes: 3; martes: datos y educativo
 
 
 def test_en_seco_no_crea_nada_ni_purga(
@@ -406,7 +426,7 @@ def test_sin_ningun_anuncio_no_crea_borrador_y_dice_por_que(
     reporte = run_daily(session, LUNES, tmp_path, execute=True)
 
     assert [(c.slug, c.estado) for c in reporte.cards] == [
-        ("dato-del-dia", "sin datos"),
+        ("datos", "sin datos"),
         ("educativo", "creada"),
         ("como-se-movio", "sin datos"),
     ]

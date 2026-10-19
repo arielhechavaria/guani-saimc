@@ -18,6 +18,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
+from saimc.marketing.daily import create_datos_draft
 from saimc.marketing.posts import approve, create_draft
 from saimc.marketing.render import RendererUnavailable
 from saimc.models import MarketingPost
@@ -87,18 +88,19 @@ class TestHoy:
     ) -> None:
         html = client.get("/marketing").text
 
-        assert "Falta «Dato del día»" in html
-        assert 'name="kind" value="dato-del-dia"' in html
+        assert "Falta «Datos del día»" in html
+        assert 'name="kind" value="datos"' in html
 
     def test_un_tipo_que_ya_esta_no_se_avisa(
         self, client: TestClient, datos: None, fabrica: Path, session: Session  # noqa: F811
     ) -> None:
-        _borrador(session)
+        create_datos_draft(session, HOY, ["Arroz"], data_through=HOY)
+        session.commit()
 
         html = client.get("/marketing").text
 
-        assert "Falta «Dato del día»" not in html
-        assert 'name="kind" value="dato-del-dia"' not in html
+        assert "Falta «Datos del día»" not in html
+        assert 'name="kind" value="datos"' not in html
 
     def test_una_aprobada_muestra_su_imagen_congelada(
         self, client: TestClient, datos: None, fabrica: Path, session: Session  # noqa: F811

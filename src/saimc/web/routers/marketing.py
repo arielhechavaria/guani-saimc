@@ -39,7 +39,7 @@ import hashlib
 import json
 import uuid
 from collections.abc import Callable
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -60,8 +60,11 @@ from saimc.marketing.context import (
 from saimc.marketing.daily import (
     CAROUSEL_SLIDES,
     CAROUSEL_SLOT,
+    DATOS_SLOT,
     EDU_SLOT,
     cards_for_day,
+    create_datos_draft,
+    datos_products,
     havana_today,
     slot_label,
     to_havana,
@@ -238,10 +241,12 @@ def _is_carousel(post: MarketingPost) -> bool:
 
 
 def _post_title(post: MarketingPost, kind: CardType) -> str:
-    """«Educativo» para la lección, «Carrusel» para el resto de carruseles,
-    o el nombre de la tarjeta si va sola."""
+    """«Educativo» para la lección, «Datos del día» para el carrusel de datos,
+    «Carrusel» para el resto de carruseles, o el nombre de la tarjeta si va sola."""
     if post_slot(post) == EDU_SLOT:
         return slot_label(EDU_SLOT)
+    if post.slides[0].card_slug == "datos-portada":
+        return slot_label(DATOS_SLOT)
     return slot_label(CAROUSEL_SLOT) if _is_carousel(post) else kind.label
 
 
@@ -249,7 +254,8 @@ def _post_card(post: MarketingPost) -> dict[str, Any]:
     slide = post.slides[0]
     kind = BY_SLUG[slide.card_slug]
     datos = next((s for s in post.slides if s.params.get("product")), slide)
-    partes = [datos.params.get("product"), datos.params.get("province")]
+    productos = dict.fromkeys(s.params["product"] for s in post.slides if s.params.get("product"))
+    partes = [", ".join(productos), datos.params.get("province")]
     if _is_carousel(post):
         partes.insert(0, f"{len(post.slides)} diapositivas")
     return {
@@ -291,6 +297,8 @@ def marketing_hoy(
             "cards": [_post_card(p) for p in posts],
             "missing": faltan,
             "postable": POSTABLE,
+            "datos_slot": DATOS_SLOT,
+            "datos_label": slot_label(DATOS_SLOT),
             "carousel_slot": CAROUSEL_SLOT,
             "carousel_label": slot_label(CAROUSEL_SLOT),
             "fixed": [t for t in CARD_TYPES if t.slug in FIXED_PIECES],
@@ -333,8 +341,9 @@ async def marketing_post_create(
     request: Request, db: Session = Depends(get_db), today: date = Depends(get_today)
 ) -> RedirectResponse:
     """Un borrador del operador para hoy, con el primer producto y la primera
-    provincia del foco; se ajustan en el editor. `kind=carrusel` arma el
-    carrusel de la semana tipo con sus cuatro diapositivas."""
+    provincia del foco; se ajustan en el editor. `kind=datos` arma el carrusel
+    de datos del día (con los productos que tienen datos hoy) y `kind=carrusel`
+    el carrusel de cuatro diapositivas del editor."""
     form = await request.form()
     pedido = str(form.get("kind") or "")
     productos = pilot_product_names(db)
@@ -342,6 +351,13 @@ async def marketing_post_create(
     provincia = PHASE0_PROVINCES[0] if PHASE0_PROVINCES else None
     if pedido == EDU_SLOT:
         post = create_lesson_draft(db, lesson=lesson_for_day(today), planned_for=today)
+    elif pedido == DATOS_SLOT:
+        productos_datos = datos_products(db, today)
+        if not productos_datos:
+            raise HTTPException(status.HTTP_409_CONFLICT, "Ningún producto tiene datos todavía.")
+        post = create_datos_draft(
+            db, today, productos_datos, data_through=today - timedelta(days=1)
+        )
     elif pedido == CAROUSEL_SLOT:
         post = create_carousel_draft(
             db, card_slugs=CAROUSEL_SLIDES, planned_for=today, product=producto,
