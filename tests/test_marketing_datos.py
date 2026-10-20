@@ -186,7 +186,7 @@ def test_la_portada_dice_la_cantidad_real_de_productos_con_tope_y_la_fecha_de_co
     assert "datos hasta el 18/10" in html
     assert "4 productos" in html
     assert ">1 / 6<" in html
-    assert "data:image" in html  # el avatar a color embebido
+    assert 'class="ph-brand-avatar"' in html  # el avatar SVG del sitio, inline
 
 
 def test_la_portada_con_un_producto_va_en_singular(session: Session, cinco: None) -> None:

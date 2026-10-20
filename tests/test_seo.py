@@ -287,17 +287,9 @@ class TestCabecera:
     def test_iconos_declarados(self, client: TestClient, ruta: str) -> None:
         enlaces = _etiquetas(client.get(ruta).text, "link")
         iconos = {(a.get("rel"), a.get("sizes"), a.get("type")): a["href"] for a in enlaces}
-        assert iconos[("icon", "48x48", "image/png")] == "/static/seo/favicon-48.png"
+        assert iconos[("icon", "any", "image/svg+xml")] == "/static/seo/favicon.svg"
         assert iconos[("icon", "32x32", "image/png")] == "/static/seo/favicon-32.png"
         assert iconos[("apple-touch-icon", "180x180", None)] == "/static/seo/apple-touch-icon.png"
-
-    @pytest.mark.parametrize("ruta", ["/precios", "/quienes-somos", "/metodologia"])
-    def test_las_paginas_publicas_pintan_la_foto_del_avatar(
-        self, client: TestClient, ruta: str
-    ) -> None:
-        html = client.get(ruta).text
-        assert 'class="ph-brand-avatar" src="/static/brand/guani-avatar.webp"' in html
-        assert (STATIC / "brand" / "guani-avatar.webp").is_file()
 
     def test_la_pagina_de_acceso_tambien_lleva_la_cabecera(self, client: TestClient) -> None:
         # Usa el mismo shell; no debe romper al renderizar el parcial.
@@ -408,11 +400,9 @@ class TestIconosYTarjeta:
     def test_favicon_32_es_32_por_32(self) -> None:
         assert _dimensiones_png(STATIC / "seo" / "favicon-32.png") == (32, 32)
 
-    def test_favicon_48_es_48_por_48(self) -> None:
-        assert _dimensiones_png(STATIC / "seo" / "favicon-48.png") == (48, 48)
-
-    def test_no_queda_el_favicon_svg_gris(self) -> None:
-        assert not (STATIC / "seo" / "favicon.svg").exists()
+    def test_favicon_svg_es_un_svg(self) -> None:
+        contenido = (STATIC / "seo" / "favicon.svg").read_text(encoding="utf-8")
+        assert contenido.lstrip().startswith("<svg")
 
     @pytest.mark.parametrize(
         "ruta",
@@ -420,7 +410,7 @@ class TestIconosYTarjeta:
             "og-guani.png",
             "apple-touch-icon.png",
             "favicon-32.png",
-            "favicon-48.png",
+            "favicon.svg",
         ],
     )
     def test_se_sirven_desde_static(self, client: TestClient, ruta: str) -> None:

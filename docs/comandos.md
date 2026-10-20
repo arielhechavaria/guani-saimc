@@ -351,7 +351,7 @@ defecto: nada cambia hasta que lo enciendas.
 ### Íconos y tarjeta de compartir (SEO)
 
 Sirve para regenerar `og-guani.png` (la imagen que ven WhatsApp, Telegram y X al pegar un enlace),
-`favicon-32.png`, `favicon-48.png` y `apple-touch-icon.png`, en `src/saimc/web/static/seo/`. Se corre
+`favicon.svg`, `favicon-32.png` y `apple-touch-icon.png`, en `src/saimc/web/static/seo/`. Se corre
 **en desarrollo**, solo cuando cambia el avatar o la plantilla `marketing_og_compartir.html`; los archivos
 generados se commitean y el VPS no necesita Chromium para servirlos.
 

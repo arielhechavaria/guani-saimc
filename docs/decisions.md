@@ -13024,3 +13024,9 @@ Contexto: tras reemplazar las lecciones por las láminas de la presentación, el
 Decisión: `posts.LEGACY_CARDS` saca `leccion` de `POSTABLE` (menú y creación; el router responde 404 si no está en `POSTABLE`); el menú suma «Educativo (láminas de la presentación para instituciones)» con `kind=educativo`. Leer, editar y aprobar lecciones ya creadas sigue funcionando.
 Descartado: borrar la tarjeta `leccion` del catálogo: rompería las publicaciones viejas.
 Consecuencia: el borrador de texto que ya se creó hoy (card `leccion`) sigue en la base hasta que el operador lo descarte.
+
+## 2026-10-20 — Vuelve el avatar gris (reemplaza «El avatar a color pasa a todo el sitio»)
+Contexto: el operador probó un día la foto a color (`guani_v2`, traída de Drive) en el sitio y en las tarjetas de marketing y concluyó que no funciona.
+Decisión: se revierten `bc2bbae` y `a6e905b`: vuelven el busto SVG gris v5 en `_guani_avatar.html`, `favicon.svg`, el parpadeo `guani-eye` de la landing y los íconos y el og anteriores. Las tarjetas de marketing también vuelven al SVG: `_marketing_avatar.html` incluye `_guani_avatar.html` (inline, sin /static); se borran `guani-avatar.webp` y `avatar_data_uri`. Reemplaza la entrada del 2026-10-19 y la parte de avatar de la sección educativa del mismo día (`33d290b`).
+Descartado: dejar la foto solo en redes y el gris en el sitio: dos identidades para la misma marca, mismo motivo que el 2026-10-19 en sentido contrario.
+Consecuencia: un solo avatar en todas partes, el SVG gris. Las piezas de marketing ya aprobadas con la foto no se regeneran solas.

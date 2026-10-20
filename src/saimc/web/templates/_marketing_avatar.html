@@ -1,2 +1,2 @@
-{# Avatar a color de las tarjetas de marketing: la foto embebida como data URI (la tarjeta se rasteriza sin /static). El sitio usa la misma foto vía _guani_avatar.html. #}
-<img class="mc-avatar" src="{{ avatar_uri }}" alt="Guani">
+{# Avatar de las tarjetas de marketing: el mismo busto SVG gris del sitio (_guani_avatar.html). Va inline, así que la tarjeta se rasteriza sin /static. #}
+{% include "_guani_avatar.html" %}

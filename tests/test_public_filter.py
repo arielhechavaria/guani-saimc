@@ -2447,7 +2447,7 @@ class TestRutaProductoLimpia:
         texto = client.get("/precios").text
 
         assert "Guani · SAIMC · Fase 0" in texto
-        assert 'class="ph-brand-avatar" src="/static/brand/guani-avatar.webp"' in texto  # el avatar del header
+        assert 'aria-label="Guani"' in texto  # el avatar del header
 
     def test_el_indicador_de_carga_usa_el_avatar_y_vive_fuera_de_ph_live(
         self, client: TestClient
@@ -2460,7 +2460,7 @@ class TestRutaProductoLimpia:
 
         assert 'hx-indicator="#ph-loading"' in texto
         assert 'class="ph-loading htmx-indicator"' in texto
-        assert texto.count('class="ph-brand-avatar" src="/static/brand/guani-avatar.webp"') == 2  # header + indicador
+        assert texto.count('aria-label="Guani"') == 2  # header + indicador
 
         # `{# /#ph-live #}` no sobrevive al render (es un comentario Jinja);
         # se ancla en el pie de la leyenda del mapa, que es el último markup
@@ -2981,7 +2981,7 @@ class TestAccionesYCoberturaEnElTablero:
 
         assert 'class="ph-top-brand"' in texto
         assert '<span class="ph-wordmark">Guani</span>' in texto
-        assert 'src="/static/brand/guani-avatar.webp"' in texto  # _guani_avatar.html
+        assert 'viewBox="0 0 80 80"' in texto  # _guani_avatar.html
         assert "ph-actions-trigger" not in texto  # ya no es un menú
 
     def test_la_cobertura_esta_en_la_pagina_sin_ir_al_mapa(
