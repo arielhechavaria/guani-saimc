@@ -13048,3 +13048,15 @@ Contexto: el operador tiene dos tarjetas cubanas (Clásica de Fincimex y Bandec)
 Decisión: `/apoyar` dibuja un QR por archivo existente, con su rótulo: `static/apoyar-qr-clasica.png` («Tarjeta Clásica») y `static/apoyar-qr-bandec.png` («Tarjeta Bandec»). Reemplaza `static/apoyar-qr.png` de la entrada anterior del mismo día.
 Descartado: un solo QR genérico, porque quien paga elige la app de su banco y necesita el de su tarjeta; y una variable de configuración por QR, porque un archivo en `static/` es más simple.
 Consecuencia: cada archivo aparece solo si existe; la página sigue existiendo con que haya enlace o al menos un QR.
+
+## 2026-10-20 — El segundo QR de /apoyar es de BPA y los archivos son .jpg
+Contexto: al revisar la carpeta del operador, la segunda tarjeta resultó ser del Banco Popular de Ahorro, no de Bandec, y las imágenes son JPEG.
+Decisión: los archivos pasan a `static/apoyar-qr-clasica.jpg` («Tarjeta Clásica») y `static/apoyar-qr-bpa.jpg` («Tarjeta BPA»). Corrige los nombres de la entrada anterior del mismo día; la decisión de un QR por tarjeta sigue igual.
+Descartado: convertir a PNG, porque un JPEG de un QR se sirve y escanea igual si está bien recortado.
+Consecuencia: los nombres exactos son los de arriba; con otro nombre o extensión el QR no se muestra.
+
+## 2026-10-20 — El QR de BPA pasa a .png (versión ya recortada)
+Contexto: la primera imagen de BPA era la captura completa de Transfermóvil, con hora, últimos dígitos y nombres de cuentas. El operador subió una versión recortada en PNG.
+Decisión: el archivo es `static/apoyar-qr-bpa.png`; el de la Clásica sigue en `static/apoyar-qr-clasica.jpg`. Corrige el nombre de la entrada anterior del mismo día. La captura completa no entra al repo.
+Descartado: aceptar cualquier extensión por tarjeta, porque son dos archivos fijos y un nombre exacto es más simple de operar y de probar.
+Consecuencia: con otro nombre o extensión el QR no se muestra.
