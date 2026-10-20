@@ -1081,6 +1081,33 @@ Escribe una versión nueva del conjunto de referencia de H0 con lo que lista el 
   con el token `SAIMC_EL_TOQUE_API` del `.env`; sin el token no corre. El dry-run no guarda en la
   cache, así que repetirlo vuelve a consultar.
 
+### Transcribir las imágenes pendientes sin OCR
+
+En seco (solo cuenta):
+
+```
+.venv/bin/python -m saimc.extraction.ocr_backfill
+```
+
+Transcribiendo y guardando:
+
+```
+.venv/bin/python -m saimc.extraction.ocr_backfill --execute
+```
+
+- **Para qué**: el texto del OCR de una imagen entra al flujo de texto. El pre-cálculo solo
+  transcribe las imágenes que le faltan de propuesta; las que ya tenían propuesta `ok` de antes
+  de K3 (28-09 al 03-10, 53 al 2026-10-20) nunca guardaron su transcripción. Este comando las
+  recorre por `ocr_store.stored_transcription`: redacta teléfonos y guarda en `ocr_transcriptions`.
+- **Cuándo**: una vez ahora, y después de subir `ocr.OCR_VERSION`. En régimen no hace falta: el
+  pre-cálculo transcribe lo nuevo.
+- **Cambia algo**: en seco, no. Con `--execute` agrega filas a `ocr_transcriptions` y nada más
+  (`raw_ingestions` no se toca). **No gasta API**: es OCR local (RapidOCR, respaldo Tesseract).
+  Tarda unos segundos por imagen.
+- Una transcripción vacía no se guarda: se cuenta como «sin texto» y la imagen vuelve a entrar
+  en la próxima corrida. `--limit N` recorre solo las N más nuevas.
+- **Cómo leer la salida**: `N imágenes recorridas: T transcriptas, E sin texto.`
+
 ### Redactar teléfonos ya guardados
 
 ```
