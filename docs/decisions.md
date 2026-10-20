@@ -13036,3 +13036,9 @@ Contexto: el operador quiere un llamado visible a sugerir ideas y una forma de r
 Decisión: nueva página `/apoyar` con el botón «Apoyar a Guani» hacia el enlace de TropiPay (`SAIMC_DONATE_URL`, solo http/https) y un QR para cuentas cubanas, que es un archivo que pone el operador (`src/saimc/web/static/apoyar-qr.png`) y se muestra solo si existe. La página, su enlace en la columna «Guani» del pie y el bloque «¿Tienes una idea o una sugerencia?» de la landing existen si y solo si hay enlace o QR (mismo principio que `/contacto`); sin ninguno, `/apoyar` da 404. El texto dice a dónde va el dinero y que donar no da acceso ni influye en los precios.
 Descartado: el PayPal del hermano (mezcla una cuenta personal con la marca), publicar números de tarjeta (datos sensibles expuestos a cualquiera) y una pasarela propia como Stripe (cuentas, webhooks y datos del donante: contra «sin autenticación» y la Fase 0).
 Consecuencia: Guani no guarda nada de quien dona; el pago ocurre en TropiPay o en la app del banco. Hay que poner `SAIMC_DONATE_URL` y el archivo del QR en el VPS; el QR no versiona un valor por defecto.
+
+## 2026-10-20 — El enlace de /apoyar es de QvaPay, no de TropiPay
+Contexto: la cuenta de TropiPay del operador está restringida por poco uso; la de QvaPay funciona.
+Decisión: `SAIMC_DONATE_URL` apunta al enlace de pago de QvaPay. El código no nombra al proveedor (solo «pago en línea»), así que no hay cambio funcional; solo el texto de `/apoyar` y los comentarios dejan de decir TropiPay.
+Descartado: mantener TropiPay como proveedor fijo, porque no se puede cobrar con la cuenta restringida; y atar el código a un proveedor, porque ya cambió una vez.
+Consecuencia: la entrada de arriba del mismo día sigue vigente en todo lo demás (QR para cuentas cubanas, sin tarjeta ni PayPal públicos).

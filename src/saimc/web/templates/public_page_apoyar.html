@@ -5,7 +5,7 @@
   (`SiteFooter.has_donate`).
 
   No muestra números de tarjeta ni cuentas de PayPal, y no guarda nada del
-  donante: el pago ocurre en TropiPay o en la app bancaria del visitante.
+  donante: el pago ocurre en la pasarela del enlace o en la app bancaria del visitante.
 #}
 {% extends "public_page.html" %}
 
@@ -26,7 +26,7 @@
 
 {% if footer.donate_url %}
 <h2>Desde el exterior</h2>
-<p>Con tarjeta, a través de TropiPay.</p>
+<p>Con un pago en línea, desde cualquier país.</p>
 <p class="pg-actions"><a class="pg-btn" href="{{ footer.donate_url }}" rel="noopener">Apoyar a Guani</a></p>
 {% endif %}
 {% if footer.donate_qr %}
