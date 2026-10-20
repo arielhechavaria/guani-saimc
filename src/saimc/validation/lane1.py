@@ -413,6 +413,14 @@ class AcceptedAd:
     audited_at: datetime | None = None
     #: Sus filas de hoy, descritas para la pantalla.
     rows: tuple[str, ...] = ()
+    #: El texto que leyó el motor: el original de un texto o el OCR guardado
+    #: (redactado) de una imagen (slice OCR como texto).
+    text: str = ""
+
+    @property
+    def from_ocr(self) -> bool:
+        """¿Se aceptó leyendo el OCR de una imagen?"""
+        return self.ingestion.content_type != ContentType.TEXT
 
 
 def _auto_events(
@@ -872,6 +880,7 @@ def audit_queue(
                 ingestion=ingestion,
                 event=event,
                 rows=tuple(_describe(session, row) for row in _rows(session, ingestion.id)),
+                text=text_of(session, ingestion) or "",
             )
             for ingestion, event in waiting
         ]

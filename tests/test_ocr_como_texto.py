@@ -19,6 +19,7 @@ son dobles: nada toca la red ni corre tesseract.
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -26,10 +27,12 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from saimc.config import Settings
+from saimc import alerting
+from saimc.config import Settings, get_settings
 from saimc.extraction import llm_propose_ad, ocr_store, prefill
 from saimc.models import (
     Channel,
@@ -47,6 +50,9 @@ from saimc.models import (
     SourceType,
 )
 from saimc.validation import jev_signal, lane0, lane1
+from saimc.web.app import app
+from saimc.web.auth import require_operator
+from saimc.web.deps import get_db
 from tests.jev_fakes import FAKE_KEY, Api, choice, client, noul
 
 TEXT = ContentType.TEXT.value
@@ -701,3 +707,84 @@ def test_el_comando_del_carril_1_acepta_imagenes_solo_con_su_interruptor(
     assert _estado(session, imagen) == ProcessingStatus.CURATED
     (evento,) = _eventos(session, imagen)
     assert evento.detail == {"row_count": 1, "text_source": "ocr"}
+
+
+# --- los informes muestran los dos tipos por separado -------------------------------
+
+
+@pytest.fixture
+def web(session: Session, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[TestClient]:
+    def _get_db_override() -> Iterator[Session]:
+        yield session
+
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    monkeypatch.setenv("SAIMC_INBOX_DIR", str(inbox))
+    monkeypatch.setenv("SAIMC_RAW_STORE_DIR", str(tmp_path / "data" / "raw"))
+    get_settings.cache_clear()
+    app.dependency_overrides[get_db] = _get_db_override
+    app.dependency_overrides[require_operator] = lambda: None
+    with TestClient(app) as test_client:
+        yield test_client
+    app.dependency_overrides.clear()
+    get_settings.cache_clear()
+
+
+def _visible(html: str) -> str:
+    return " ".join(html.split())
+
+
+def test_la_auditoria_muestra_la_imagen_por_su_ocr_y_su_cota_aparte(
+    session: Session, mundo: SimpleNamespace, tmp_path: Path, web: TestClient
+) -> None:
+    _anuncio(session, mundo.canal, tipo=IMAGE)
+    _precalcular(session, tmp_path, lane1_enabled=True, lane1_image_enabled=True)
+
+    texto = _visible(web.get("/curation/auditoria").text)
+
+    assert "Imágenes (por su OCR)" in texto
+    assert "Imagen · leída por OCR" in texto
+    # La tarjeta muestra lo que leyó el motor: el OCR, no un texto vacío.
+    assert OCR_ARROZ in texto
+
+
+def test_con_el_freno_de_imagenes_puesto_las_pantallas_lo_dicen_aparte(
+    session: Session, mundo: SimpleNamespace, tmp_path: Path, web: TestClient
+) -> None:
+    _aceptados_y_auditados(session, tmp_path, mundo.canal, IMAGE, errores=7)
+
+    auditoria = _visible(web.get("/curation/auditoria").text)
+    calidad = _visible(web.get("/control/calidad").text)
+
+    for texto in (auditoria, calidad):
+        assert "Freno de imágenes puesto" in texto
+        # El de los textos no está puesto: no se mezclan.
+        assert "Freno puesto" not in texto
+    assert "7 errores en 60 auditadas" in calidad
+
+
+def test_la_metodologia_publica_el_error_de_las_fotos_aparte(
+    session: Session, mundo: SimpleNamespace, tmp_path: Path, web: TestClient
+) -> None:
+    _aceptados_y_auditados(session, tmp_path, mundo.canal, IMAGE, errores=7)
+
+    texto = _visible(web.get("/metodologia").text)
+
+    assert "Las fotos nunca entran solas" not in texto
+    assert "Las fotos se auditan y se miden aparte de los textos" in texto
+    assert "En las fotos, aparte, la auditoría encontró 7 errores en 60 fotos auditadas" in texto
+
+
+def test_el_aviso_diario_nombra_el_freno_de_imagenes(
+    session: Session, mundo: SimpleNamespace, tmp_path: Path
+) -> None:
+    _aceptados_y_auditados(session, tmp_path, mundo.canal, IMAGE, errores=7)
+
+    alertas, resumen = alerting.collect(
+        session, _ajustes(tmp_path, lane1_enabled=True, lane1_image_enabled=True)
+    )
+
+    claves = {a.key for a in alertas}
+    assert "lane1_image_brake" in claves
+    assert "lane1_brake" not in claves
+    assert "imágenes FRENADO" in resumen
