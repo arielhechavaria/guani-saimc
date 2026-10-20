@@ -12,10 +12,11 @@ tal cual, con dos ajustes de renderizado que no tocan el contenido:
   etiqueta `x-*` hace fallar el armado: mejor que pintar a medias.
 
 Tres secciones rotan una por día, igual que `daily.candidate_order`
-(`day.toordinal() % 3`). Las láminas `hoy` (cifras fijas del 18-10) y `cierre`
-(marcador sin rellenar) no se publican. El texto del post es fijo por sección y
-sin cifras. Cambiar una lámina en `docs/` cambia lo que se publica mañana; lo
-ya aprobado queda congelado en el snapshot de la diapositiva.
+(`day.toordinal() % 3`). Las láminas `hoy` (cifras fijas del 20-10) y `cierre`
+(el cierre de la presentación, con el correo de contacto) no se publican. El
+texto del post es fijo por sección y sin cifras. Cambiar una lámina en `docs/`
+cambia lo que se publica mañana; lo ya aprobado queda congelado en el snapshot
+de la diapositiva.
 """
 
 from __future__ import annotations
@@ -33,11 +34,11 @@ _DECK_DIR = Path(__file__).resolve().parents[3] / "docs" / "presentacion-institu
 
 #: `/_blob/<id>` → archivo. Deducido por el `alt` y la proporción de cada uso:
 #: el avatar (cover, 180×180), el anuncio (pregunta, 460×320) y la página del
-#: arroz (respuesta, 1920×695).
+#: arroz (respuesta, 1798×700).
 _BLOBS: dict[str, str] = {
     "1937bd5faa6c22845a2a3c30b2518dfa": "avatar.png",
     "4f15636e6388c756c6cb022fdc2a5b37": "anuncio.png",
-    "f1d41e3892d9a0cd7cdfbffb56d71008": "arroz-habana.png",
+    "e7abcd58132fec2dfe7852d49d4dad92": "arroz-habana.png",
 }
 
 

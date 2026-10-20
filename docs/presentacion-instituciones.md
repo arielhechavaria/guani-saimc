@@ -14,27 +14,29 @@ La voz sale de `docs/narrativa-guani.md`: la idea madre en su versión neutra
 («parece caótico, pero tiene orden», que es la que la narrativa pide con
 aliados), la vara como eslogan, las cuentas claras como prueba y «cada quien
 decide» como cierre. La firma y el remitente salen de `docs/plan-marca-leira-studio.md`.
-Escrito el 2026-10-18.
+Escrito el 2026-10-18; cifras, correo y enlaces puestos al día el 2026-10-20.
 
 ## Antes de enviarla
 
-**Bloqueante: no se manda antes de la Fase 1.** La presentación invita a ver el
+**Era bloqueante: no se mandaba antes de la Fase 1.** Ya se cumplió (Fase 0 cerrada en fc64e2e). La presentación invita a ver el
 sitio sin contraseña, y la puerta solo se apaga después del cierre de la
 Fase 0 (`docs/decisions.md`, «2026-10-18 — Criterio de cierre de la Fase 0 y
 de inicio de la Fase 1»). Antes de eso, abrirlo publicaría precios convertidos
 con una tasa equivocada (las 266 filas en USD con `elTOQUE (cache)`).
 
-- [ ] **T1 aplicado** y `revalidate --execute` corrido después.
+- [x] **T1 aplicado** y `revalidate --execute` corrido después (cierre de la Fase 0, 2026-10-19).
 - [x] **La puerta apagada** (`SAIMC_SITE_GATE_ENABLED=false`; hecho el 2026-10-19). Dar acceso por
       contraseña a una institución sirve solo para un adelanto, y entonces
       «gratis, sin registrarse» no es cierto.
-- [ ] **Las cifras, otra vez desde la base.** Las de las slides 7, 9 y 11 son
-      del 2026-10-18 y anteriores a T1: la mediana del arroz y los 604
-      precios pueden moverse. Nunca se dicen de memoria. Si la cifra cambia,
-      se cambia también la captura de la slide 9.
-- [ ] **Cuántos anuncios de la slide 9 revisó una persona.** Mirarlo en la
-      página del arroz antes de enviar: si ninguno, cambiar de ejemplo o
-      decirlo.
+- [x] **Las cifras, otra vez desde la base.** Rehechas el 2026-10-20, después
+      de T1: la mediana del arroz pasó de 327 a 353 y los precios de 30 días
+      de 604 a 770; la captura de la slide 9 se rehízo. Si pasa más de una
+      semana antes de enviar, se vuelven a sacar (tabla de abajo).
+- [x] **Cuántos anuncios de la slide 9 revisó una persona.** De los 53 del
+      paquete de 1 kg (2026-10-20): 4 revisados a mano antes de entrar, 39
+      aceptados por el sistema y auditados después por una persona, 10
+      aceptados por el sistema todavía sin auditar. La slide no dice que una
+      persona los revisó, así que queda como está.
 - [ ] **Los destinatarios, en La Habana y por nivel de exposición** (`docs/plan-marca-leira-studio.md`,
       «Orden de envío»): primero los de exposición baja, esperar una o dos
       semanas, después los de media. Los de alta, y cualquier organismo, solo
@@ -42,14 +44,14 @@ con una tasa equivocada (las 266 filas en USD con `elTOQUE (cache)`).
       no reciben nada.
 - [ ] **Qué se responde si piden un nombre o una llamada**
       (`docs/plan-marca-leira-studio.md`, «Riesgos»).
-- [ ] **El correo de la marca.** Se envía desde el correo de Leira Studio, no
-      desde el personal, y el remitente visible dice «Leira Studio». Reemplazar
-      `[correo de la marca]` en la slide 16.
-- [ ] **Los enlaces.** Abrir los tres de la slide 15 por `https://` desde fuera
-      de la red propia (lo que está delante de uvicorn sigue sin constar en el
-      repo, `docs/plan-bloque-mvp.md`, T10).
-- [ ] **El peso del PDF.** Menos de 5 MB, para que llegue con una conexión
-      lenta.
+- [x] **El correo de la marca.** Se envía desde el correo de Leira Studio, no
+      desde el personal, y el remitente visible dice «Leira Studio». La slide 16
+      dice `leirastudio@gmail.com` (guani.app no tiene correo propio: sin MX al
+      2026-10-20).
+- [x] **Los enlaces.** Los tres de la slide 15 responden 200 por `https://`
+      en guani.app (2026-10-20). La versión publicada todavía decía
+      `guani.duckdns.org` en las slides 1, 10, 15 y 16: se republicó.
+- [x] **El peso del PDF.** 0,6 MB (2026-10-20).
 
 ## Reglas de la presentación
 
@@ -80,18 +82,18 @@ con una tasa equivocada (las 266 filas en USD con `elTOQUE (cache)`).
 - **Usos:** la diáspora y «contado por su gente» quedan fuera, como en la
   narrativa (sin validar, y prometen una participación que no existe).
 
-## De dónde salen las cifras (2026-10-18)
+## De dónde salen las cifras (2026-10-20)
 
 | Cifra | Valor | Fuente |
 | --- | --- | --- |
-| Mensajes recibidos | 6.899 (6.760 de WhatsApp, 139 capturas y textos del operador) | `raw_ingestions` por `source_type` |
+| Mensajes recibidos | 7.223 (7.084 de WhatsApp, 139 capturas y textos del operador) | `raw_ingestions` por `source_type` |
 | Canales y grupos | 48 | `raw_ingestions.channel_id` distintos |
-| Apartados por no ser un anuncio de precio | 5.637 (82 %) | `processing_status = discarded` |
-| Anuncios aceptados | 722 | `processing_status = curated` |
-| Esperando revisión | 540 | `processing_status = pending` |
-| Texto / imagen | 4.624 / 2.275 | `content_type` |
-| Precios publicados | 604 en 30 días, 992 en total | las observaciones visibles de la landing |
-| Arroz en La Habana, paquete de 1 kg | 53 anuncios (3 fuera de escala), 297–408 CUP/lb, mediana 327 | `/producto/arroz?provincia=la-habana`, ventana de 30 días |
+| Apartados por no ser un anuncio de precio | 6.030 (83 %) | `processing_status = discarded` |
+| Anuncios aceptados | 783 | `processing_status = curated` |
+| Esperando revisión | 410 | `processing_status = pending` |
+| Texto / imagen | 4.777 / 2.446 | `content_type` |
+| Precios publicados | 770 en 30 días, 1.197 en total | `routers/public._visible_observations` |
+| Arroz en La Habana, paquete de 1 kg | 53 anuncios (3 fuera de escala), 315–408 CUP/lb, mediana 353 | `/producto/arroz?provincia=la-habana`, ventana de 30 días |
 
 ## La presentación
 
@@ -105,14 +107,14 @@ con una tasa equivocada (las 266 filas en USD con `elTOQUE (cache)`).
   rotan por día (`saimc.marketing.deck`): idea (`cover`, `orden`, `pregunta`,
   `quienvende`, `quees`), cómo funciona (`flujo`, `embudo`, `vara`,
   `respuesta`, `cuentas`) y a quién le habla (`noopina`, `publico`, `viene`,
-  `miralo`). No se publican `hoy` (cifras fijas del 18 de octubre) ni `cierre`
-  (marcador «[correo de la marca]» sin rellenar). Cambiar una lámina aquí
+  `miralo`). No se publican `hoy` (cifras fijas del 20 de octubre) ni `cierre`
+  (el cierre de la presentación, con el correo de contacto). Cambiar una lámina aquí
   cambia lo que se publica mañana, no lo ya aprobado.
 - **Imágenes:** `anuncio.png` es la recreación de un anuncio de
   `static/landing/flujo-1.webp`; `arroz-habana.png` es una captura de las
   tarjetas de `/producto/arroz?provincia=la-habana` sin la cabecera (su rango
-  general incluye los precios fuera de escala); `avatar.png` es
-  `static/seo/apple-touch-icon.png`.
+  general incluye los precios fuera de escala), rehecha el 2026-10-20 desde
+  guani.app; `avatar.png` es el avatar gris de Guani.
 
 | # | Slide | Lo que dice |
 | --- | --- | --- |
@@ -152,7 +154,7 @@ lo que hace cada una.
 > precios, información al público.]
 >
 > Adjuntamos una presentación breve. Hoy cubre [5] productos en [2]
-> provincias, y pueden consultarlo en guani.app. Con gusto les
+> provincias, y pueden consultarlo en https://guani.app. Con gusto les
 > contamos más o respondemos cualquier pregunta.
 >
 > Saludos,
