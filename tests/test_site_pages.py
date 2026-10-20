@@ -549,7 +549,7 @@ def sin_qr(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
 @pytest.fixture
 def con_qr(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     (tmp_path / "apoyar-qr-clasica.jpg").write_bytes(b"png")
-    (tmp_path / "apoyar-qr-bpa.jpg").write_bytes(b"png")
+    (tmp_path / "apoyar-qr-bpa.png").write_bytes(b"png")
     monkeypatch.setattr(site_pages, "DONATE_QR_DIR", tmp_path)
 
 
@@ -598,7 +598,7 @@ class TestApoyar:
 
         assert respuesta.status_code == 200
         assert 'src="/static/apoyar-qr-clasica.jpg"' in respuesta.text
-        assert 'src="/static/apoyar-qr-bpa.jpg"' in respuesta.text
+        assert 'src="/static/apoyar-qr-bpa.png"' in respuesta.text
         assert "Tarjeta Clásica" in respuesta.text and "Tarjeta BPA" in respuesta.text
         assert respuesta.text.count('alt="Código QR') == 2
         assert 'class="pg-btn"' not in respuesta.text
@@ -606,12 +606,12 @@ class TestApoyar:
     def test_con_un_solo_archivo_se_muestra_solo_ese_qr(
         self, client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
-        (tmp_path / "apoyar-qr-bpa.jpg").write_bytes(b"png")
+        (tmp_path / "apoyar-qr-bpa.png").write_bytes(b"png")
         monkeypatch.setattr(site_pages, "DONATE_QR_DIR", tmp_path)
 
         texto = client.get("/apoyar").text
 
-        assert "apoyar-qr-bpa.jpg" in texto
+        assert "apoyar-qr-bpa.png" in texto
         assert "apoyar-qr-clasica.jpg" not in texto
 
     @pytest.mark.usefixtures("con_qr")
