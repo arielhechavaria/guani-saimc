@@ -290,9 +290,9 @@ class Settings(BaseSettings):
     link_telegram: str | None = None
     contact_email: str | None = None
 
-    # Enlace de donación (TropiPay) de `/apoyar` (2026-10-20). Opcional y solo
+    # Enlace de donación (QvaPay, TropiPay u otro) de `/apoyar` (2026-10-20). Opcional y solo
     # `http(s)://`, como los enlaces de arriba. Sin él y sin el QR
-    # (`static/apoyar-qr.png`) la página no existe.
+    # (`static/apoyar-qr-*.png`) la página no existe.
     donate_url: str | None = None
 
     # Procedencia del `price_basis` retro-completado por inferencia en las

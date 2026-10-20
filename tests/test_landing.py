@@ -1707,7 +1707,7 @@ class TestBloqueDeIdeas:
 
     @pytest.fixture(autouse=True)
     def _sin_qr(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-        monkeypatch.setattr(site_pages, "DONATE_QR_FILE", tmp_path / "no-existe.png")
+        monkeypatch.setattr(site_pages, "DONATE_QR_DIR", tmp_path)
 
     def test_sin_configuracion_no_se_dibuja(self, client: TestClient) -> None:
         html = client.get("/").text

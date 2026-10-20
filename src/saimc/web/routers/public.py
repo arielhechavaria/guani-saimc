@@ -1086,7 +1086,7 @@ def public_contact(request: Request) -> HTMLResponse:
 @router.get(DONATE_PATH, response_class=HTMLResponse)
 def public_donate(request: Request) -> HTMLResponse:
     """Apoyar a Guani: el enlace de donación (`SAIMC_DONATE_URL`) y/o el QR
-    (`static/apoyar-qr.png`). Sin ninguno la página no existe —404— y ni el pie
+    (`static/apoyar-qr-*.png`). Sin ninguno la página no existe —404— y ni el pie
     ni la landing la enlazan: todo sale de `SiteFooter.has_donate`."""
     if not _site_footer().has_donate:
         raise HTTPException(status_code=404, detail="No hay página de apoyo")
