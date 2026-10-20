@@ -1,6 +1,6 @@
 {#
   `/apoyar`. Solo existe si hay cómo apoyar: el router responde 404 sin un
-  enlace de donación (`SAIMC_DONATE_URL`) ni el QR (`static/apoyar-qr.png`), y
+  enlace de donación (`SAIMC_DONATE_URL`) ni algún QR (`static/apoyar-qr-clasica.png`, `static/apoyar-qr-bandec.png`), y
   con la misma condición el pie y la landing dejan de enlazarla
   (`SiteFooter.has_donate`).
 
@@ -29,11 +29,16 @@
 <p>Con un pago en línea, desde cualquier país.</p>
 <p class="pg-actions"><a class="pg-btn" href="{{ footer.donate_url }}" rel="noopener">Apoyar a Guani</a></p>
 {% endif %}
-{% if footer.donate_qr %}
+{% if footer.donate_qrs %}
 <h2>Desde Cuba</h2>
-<p>Escanea el código desde Transfermóvil o EnZona.</p>
-<img class="pg-qr" src="{{ footer.donate_qr }}" width="240" height="240" loading="lazy"
-     alt="Código QR para apoyar a Guani con un pago desde Transfermóvil o EnZona">
+<p>Escanea el código de tu tarjeta desde Transfermóvil o EnZona.</p>
+{% for qr in footer.donate_qrs %}
+<figure class="pg-qr-item">
+  <img class="pg-qr" src="{{ qr.src }}" width="240" height="240" loading="lazy"
+       alt="Código QR para apoyar a Guani con la {{ qr.label | lower }}, desde Transfermóvil o EnZona">
+  <figcaption>{{ qr.label }}</figcaption>
+</figure>
+{% endfor %}
 {% endif %}
 {% endblock %}
 

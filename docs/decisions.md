@@ -13042,3 +13042,9 @@ Contexto: la cuenta de TropiPay del operador está restringida por poco uso; la 
 Decisión: `SAIMC_DONATE_URL` apunta al enlace de pago de QvaPay. El código no nombra al proveedor (solo «pago en línea»), así que no hay cambio funcional; solo el texto de `/apoyar` y los comentarios dejan de decir TropiPay.
 Descartado: mantener TropiPay como proveedor fijo, porque no se puede cobrar con la cuenta restringida; y atar el código a un proveedor, porque ya cambió una vez.
 Consecuencia: la entrada de arriba del mismo día sigue vigente en todo lo demás (QR para cuentas cubanas, sin tarjeta ni PayPal públicos).
+
+## 2026-10-20 — /apoyar admite un QR por tarjeta (Clásica y Bandec)
+Contexto: el operador tiene dos tarjetas cubanas (Clásica de Fincimex y Bandec) y cada una tiene su QR; el diseño inicial admitía uno solo.
+Decisión: `/apoyar` dibuja un QR por archivo existente, con su rótulo: `static/apoyar-qr-clasica.png` («Tarjeta Clásica») y `static/apoyar-qr-bandec.png` («Tarjeta Bandec»). Reemplaza `static/apoyar-qr.png` de la entrada anterior del mismo día.
+Descartado: un solo QR genérico, porque quien paga elige la app de su banco y necesita el de su tarjeta; y una variable de configuración por QR, porque un archivo en `static/` es más simple.
+Consecuencia: cada archivo aparece solo si existe; la página sigue existiendo con que haya enlace o al menos un QR.
