@@ -49,7 +49,7 @@ DOMINGO = date(2026, 10, 25)
 def _lote(
     session: Session, day: date, slot: str, *, through: date | None = None
 ) -> MarketingPost:
-    """Un borrador del lote para `day`, como lo deja el temporizador de las 06:00."""
+    """Un borrador del lote para `day`, como lo deja el temporizador de las 05:00."""
     comun = {
         "planned_for": day, "product": "Arroz", "province": "La Habana",
         "data_through": through or day, "origin": PostOrigin.BATCH, "batch_slot": slot,

@@ -81,6 +81,13 @@ class Settings(BaseSettings):
     waha_base_url: str | None = None
     waha_api_key: str | None = None
     waha_session: str = "default"
+    # La segunda sesión de WAHA, con un número aparte, que publica en el canal
+    # de WhatsApp de Guani (`saimc.marketing.channel`, docs/decisions.md
+    # 2026-10-20). Número aparte para que un baneo no frene la ingesta.
+    # `waha_channel_id` es el JID `…@newsletter` del canal; vacío = la
+    # publicación está apagada y el comando lo dice y sale con 1.
+    waha_channel_session: str = "guani-canal"
+    waha_channel_id: str = ""
     # Mismo criterio que `el_toque_timeout`: un fetch lento no debe colgar la
     # request del operador — degrada a error en vez de esperar indefinido.
     waha_timeout: float = 30.0

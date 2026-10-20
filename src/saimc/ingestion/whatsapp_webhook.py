@@ -105,6 +105,25 @@ def _parse_media(payload: dict[str, Any]) -> tuple[str | None, str | None]:
     return url, suffix
 
 
+def is_foreign_session(body: Any, ingest_session: str) -> bool:
+    """¿El evento viene de una sesión de WAHA que no es la de ingesta?
+
+    El webhook de WAHA es global por contenedor (`WHATSAPP_HOOK_URL`): desde el
+    2026-10-20 la sesión que publica en el canal de Guani (`guani-canal`,
+    `docs/decisions.md`) también manda sus eventos acá. Nada de lo que vea esa
+    sesión es dato de mercado, así que no entra aunque el chat esté registrado.
+
+    Solo es ajeno si el envoltorio `{"event", "session", "payload"}` trae una
+    sesión explícita y distinta. La forma plana no trae sesión: ahí no se puede
+    decir, y se conserva el comportamiento de siempre en vez de descartar a
+    ciegas.
+    """
+    if not isinstance(body, dict):
+        return False
+    session = body.get("session")
+    return isinstance(session, str) and session != ingest_session
+
+
 def parse_message(body: Any, sender_key: str | None = None) -> ParsedMessage | None:
     """Extrae un mensaje utilizable del payload de WAHA, o `None` si no aplica.
 

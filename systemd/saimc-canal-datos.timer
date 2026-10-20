@@ -1,0 +1,15 @@
+[Unit]
+Description=Publica el turno «datos» en el canal de WhatsApp de Guani
+
+[Timer]
+# 06:00 hora de La Habana, no del VPS (que corre en UTC). Una hora despues del lote que crea los borradores (saimc-marketing.timer,
+# 05:00): lo que el operador aprobo en esa hora sale.
+OnCalendar=*-*-* 06:00:00 America/Havana
+# Si el VPS estuvo apagado a la hora, corre al volver: lo aprobado sale igual,
+# tarde. El envio es idempotente, asi que correr de mas no duplica.
+Persistent=true
+RandomizedDelaySec=60
+Unit=saimc-canal@datos.service
+
+[Install]
+WantedBy=timers.target

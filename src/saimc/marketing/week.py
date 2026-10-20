@@ -2,7 +2,7 @@
 `docs/plan-fabrica-marketing.md`).
 
 Solo lectura: no escribe nada ni cambia el esquema. Lo que pide cada día es lo
-mismo que pide el lote de las 06:00 y la pantalla «Hoy» (`cards_for_day`), así
+mismo que pide el lote de las 05:00 y la pantalla «Hoy» (`cards_for_day`), así
 las tres no se contradicen. Las stories de la guía
 (`docs/guia-crecimiento.md`, «La semana tipo») no las arma el sistema: van como
 nota a mano, sin estado.

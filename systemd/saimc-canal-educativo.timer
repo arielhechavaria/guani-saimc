@@ -1,0 +1,14 @@
+[Unit]
+Description=Publica el turno «educativo» en el canal de WhatsApp de Guani
+
+[Timer]
+# 10:00 hora de La Habana, no del VPS (que corre en UTC). Separado de los datos para no mandar dos carruseles seguidos.
+OnCalendar=*-*-* 10:00:00 America/Havana
+# Si el VPS estuvo apagado a la hora, corre al volver: lo aprobado sale igual,
+# tarde. El envio es idempotente, asi que correr de mas no duplica.
+Persistent=true
+RandomizedDelaySec=60
+Unit=saimc-canal@educativo.service
+
+[Install]
+WantedBy=timers.target

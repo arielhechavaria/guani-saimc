@@ -27,7 +27,7 @@ from sqlalchemy.orm import Session
 
 from saimc.config import get_settings
 from saimc.ingestion.whatsapp_media import fetch_media, is_trusted_media_url
-from saimc.ingestion.whatsapp_webhook import parse_message, verify_hmac
+from saimc.ingestion.whatsapp_webhook import is_foreign_session, parse_message, verify_hmac
 from saimc.models import Channel, Platform, ProcessingStatus, RawIngestion, SourceType
 from saimc.web.app import app
 from saimc.web.deps import get_db
@@ -205,6 +205,25 @@ class TestParseMessage:
         assert parse_message("no soy un json valido") is None  # type: ignore[arg-type]
 
 
+# --- is_foreign_session ----------------------------------------------------------
+
+
+class TestIsForeignSession:
+    def test_otra_sesion_es_ajena(self) -> None:
+        assert is_foreign_session({"session": "guani-canal", "payload": {}}, "default") is True
+
+    def test_la_sesion_de_ingesta_no_es_ajena(self) -> None:
+        assert is_foreign_session({"session": "default", "payload": {}}, "default") is False
+
+    def test_sin_campo_session_no_se_puede_decir_y_no_es_ajena(self) -> None:
+        """La forma plana (sin envoltorio) no trae sesión: se conserva el
+        comportamiento de siempre en vez de descartar a ciegas."""
+        assert is_foreign_session({"from": "1@newsletter", "body": "x"}, "default") is False
+
+    def test_un_cuerpo_que_no_es_diccionario_no_es_ajeno(self) -> None:
+        assert is_foreign_session(["x"], "default") is False
+
+
 # --- endpoint --------------------------------------------------------------
 
 
@@ -227,6 +246,9 @@ def client(
     # se llama nunca y la foto se descarta.
     monkeypatch.setenv("SAIMC_WAHA_BASE_URL", "http://localhost:3000")
     monkeypatch.setenv("SAIMC_WAHA_API_KEY", "clave-waha")
+    # La sesión de ingesta, fija: el guard de sesión ajena (2026-10-20) la
+    # compara contra el `session` del evento, y un `.env` con otra la cambiaría.
+    monkeypatch.setenv("SAIMC_WAHA_SESSION", "default")
     get_settings.cache_clear()
 
     app.dependency_overrides[get_db] = _get_db_override
@@ -385,6 +407,48 @@ class TestWebhookEndpoint:
 
         assert response.status_code == 200
         assert _ingestas(session) == []
+
+    def _post_envuelto(self, client: TestClient, sesion: str) -> httpx.Response:
+        cuerpo = json.dumps(
+            {
+                "event": "message.any",
+                "session": sesion,
+                "payload": {"from": "1@newsletter", "body": "aceite 1L a 950", "timestamp": 1},
+            }
+        ).encode()
+        return client.post(
+            "/webhooks/whatsapp",
+            content=cuerpo,
+            headers={
+                "content-type": "application/json",
+                "X-Webhook-Hmac": _firmar("clave-de-prueba", cuerpo),
+            },
+        )
+
+    def test_evento_de_otra_sesion_de_waha_no_se_ingiere(
+        self, client: TestClient, session: Session
+    ) -> None:
+        """El webhook de WAHA es global por contenedor: la sesión que publica
+        en el canal de Guani (`guani-canal`, docs/decisions.md 2026-10-20)
+        también manda sus eventos acá. Aunque el chat sea un canal registrado,
+        no es la sesión de ingesta y no entra."""
+        _canal(session)
+
+        response = self._post_envuelto(client, "guani-canal")
+
+        assert response.status_code == 200
+        assert response.json()["ingested"] == 0
+        assert _ingestas(session) == []
+
+    def test_evento_de_la_sesion_de_ingesta_entra(
+        self, client: TestClient, session: Session
+    ) -> None:
+        _canal(session)
+
+        response = self._post_envuelto(client, "default")
+
+        assert response.status_code == 200
+        assert len(_ingestas(session)) == 1
 
     def test_mensaje_sin_texto_se_ignora_sin_romper(
         self, client: TestClient, session: Session

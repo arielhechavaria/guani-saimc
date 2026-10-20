@@ -1,0 +1,25 @@
+[Unit]
+Description=Publica en el canal de WhatsApp de Guani lo aprobado del turno %i
+After=postgresql.service
+
+[Service]
+# Plantilla: %i es el turno (datos o educativo). La instancian
+# saimc-canal-datos.timer y saimc-canal-educativo.timer.
+# oneshot: lee, manda y termina. Sin cola ni servicio permanente (decision
+# cerrada 3), igual que saimc-marketing.
+Type=oneshot
+User=ariel
+WorkingDirectory=/home/ariel/guani/guani-saimc
+
+# Manda por WAHA, con la segunda sesion (SAIMC_WAHA_CHANNEL_SESSION, numero
+# aparte del de la ingesta), la publicacion del lote de hoy y de ese turno,
+# solo si el operador ya la aprobo. Una lamina por mensaje, el texto sin
+# hashtags en la primera. Si se corta a mitad, la repeticion sigue desde la
+# lamina siguiente y no duplica (docs/decisions.md 2026-10-20).
+# Codigo 0 = enviada o ya enviada. Codigo 1 = nada aprobado, falta
+# configuracion (SAIMC_WAHA_CHANNEL_ID), falta una imagen o WAHA fallo: la
+# unidad queda en «failed» y se ve en `systemctl --failed`.
+ExecStart=/home/ariel/guani/guani-saimc/.venv/bin/python -m saimc.marketing.channel --slot %i --execute
+
+# Unas pocas imagenes a WAHA, que corre en el mismo VPS: de sobra.
+TimeoutStartSec=10min

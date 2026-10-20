@@ -93,11 +93,12 @@ def test_marketing_usa_el_mismo_usuario_y_directorio_que_el_backup(servicio_mark
     assert servicio_marketing["Service"]["WorkingDirectory"] == backup["WorkingDirectory"]
 
 
-def test_marketing_corre_a_las_6_de_la_manana_de_la_habana(temporizador_marketing) -> None:
+def test_marketing_corre_a_las_5_de_la_manana_de_la_habana(temporizador_marketing) -> None:
     unidad = temporizador_marketing["Timer"]
 
-    # El huso va escrito en la unidad: a las 06:00 de Cuba, no del VPS (UTC).
-    assert unidad["OnCalendar"] == "*-*-* 06:00:00 America/Havana"
+    # El huso va escrito en la unidad: a las 05:00 de Cuba, no del VPS (UTC).
+    # Una hora antes del envío de los datos al canal (docs/decisions.md 2026-10-20).
+    assert unidad["OnCalendar"] == "*-*-* 05:00:00 America/Havana"
     assert unidad["Persistent"] == "true"
     assert temporizador_marketing["Install"]["WantedBy"] == "timers.target"
 
@@ -138,3 +139,48 @@ def test_instagram_corre_cada_3_horas_y_se_pone_al_dia(temporizador_instagram) -
     assert unidad["OnCalendar"] == "*-*-* 00/3:30:00"
     assert unidad["Persistent"] == "true"
     assert temporizador_instagram["Install"]["WantedBy"] == "timers.target"
+
+
+# --- saimc-canal: publicar lo aprobado en el canal de WhatsApp (docs/decisions.md, 2026-10-20)
+
+
+def test_canal_es_una_plantilla_oneshot_que_manda_de_verdad_el_turno() -> None:
+    servicio = _leer("saimc-canal@.service")
+    unidad = servicio["Service"]
+    comando = unidad["ExecStart"]
+
+    assert unidad["Type"] == "oneshot"
+    assert "-m saimc.marketing.channel" in comando
+    # %i es el turno: lo pone el temporizador al instanciar la plantilla.
+    assert "--slot %i" in comando
+    assert "--execute" in comando
+    assert unidad["TimeoutStartSec"] == "10min"
+
+
+def test_canal_usa_el_mismo_usuario_y_directorio_que_el_backup() -> None:
+    servicio = _leer("saimc-canal@.service")["Service"]
+    backup = _leer("saimc-backup.service")["Service"]
+
+    assert servicio["User"] == backup["User"]
+    assert servicio["WorkingDirectory"] == backup["WorkingDirectory"]
+
+
+@pytest.mark.parametrize(
+    ("turno", "hora"),
+    [("datos", "06:00"), ("educativo", "10:00")],
+)
+def test_cada_turno_del_canal_sale_a_su_hora_de_la_habana(turno: str, hora: str) -> None:
+    temporizador = _leer(f"saimc-canal-{turno}.timer")
+    unidad = temporizador["Timer"]
+
+    assert unidad["OnCalendar"] == f"*-*-* {hora}:00 America/Havana"
+    assert unidad["Unit"] == f"saimc-canal@{turno}.service"
+    assert unidad["Persistent"] == "true"
+    assert temporizador["Install"]["WantedBy"] == "timers.target"
+
+
+def test_los_datos_salen_despues_del_lote_que_crea_los_borradores() -> None:
+    lote = _leer("saimc-marketing.timer")["Timer"]["OnCalendar"].split()[1]
+    datos = _leer("saimc-canal-datos.timer")["Timer"]["OnCalendar"].split()[1]
+
+    assert lote < datos

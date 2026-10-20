@@ -2,9 +2,12 @@
 Description=Genera las tarjetas de marketing de Guani cada manana
 
 [Timer]
-# 06:00 hora de La Habana, no del VPS (que corre en UTC): systemd acepta el
-# huso en la propia expresion. Antes de que el operador abra la cola.
-OnCalendar=*-*-* 06:00:00 America/Havana
+# 05:00 hora de La Habana, no del VPS (que corre en UTC): systemd acepta el
+# huso en la propia expresion. Una hora antes del envio de los datos al canal
+# de WhatsApp (saimc-canal-datos.timer, 06:00), para que el operador alcance a
+# aprobar; lo que no se aprueba a tiempo no se publica (docs/decisions.md
+# 2026-10-20).
+OnCalendar=*-*-* 05:00:00 America/Havana
 # Si el VPS estuvo apagado a la hora, corre al volver (igual que el backup).
 Persistent=true
 RandomizedDelaySec=120

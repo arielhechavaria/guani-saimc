@@ -27,7 +27,8 @@ pero que no se probó al armar este catálogo. Si falla, el catálogo es el que 
 | [`saimc.validation.shadow`](#informe-del-modo-sombra) | Qué resolvería solo el motor, y qué cambia con Jev | en seco no; `--execute` anexa a `shadow-runs.jsonl` | no |
 | [`saimc.queue_expiry`](#tope-de-edad-de-la-cola) | Vence los pendientes de más de N días (apagado por defecto) | en seco no; `--execute` descarta (motivo `off_focus`, evento auto) | no |
 | [`saimc.alerting`](#avisos-al-celular-telegram) | Avisos al celular por Telegram cuando algo requiere al operador | en seco no; `--execute` manda y guarda `data/alerts-state.json` | no |
-| [`saimc.marketing.daily`](#tarjetas-de-marketing-del-dia) | Crear los borradores de marketing del día en «Hoy» (`/marketing`) (lo hace solo el temporizador a las 06:00 de La Habana); no publica ni rasteriza | en seco no; `--execute` crea los borradores y borra los vencidos (borradores y descartadas de más de 30 días) | no |
+| [`saimc.marketing.daily`](#tarjetas-de-marketing-del-dia) | Crear los borradores de marketing del día en «Hoy» (`/marketing`) (lo hace solo el temporizador a las 05:00 de La Habana); no publica ni rasteriza | en seco no; `--execute` crea los borradores y borra los vencidos (borradores y descartadas de más de 30 días) | no |
+| [`saimc.marketing.channel`](#publicar-en-el-canal-de-whatsapp) | Mandar al canal de WhatsApp de Guani lo aprobado del día (lo hacen solos los temporizadores: datos 06:00, educativo 10:00) | en seco no; `--execute` manda por WAHA y anota lo enviado en `marketing_posts` | no |
 | [`saimc.instagram.sync`](#seguimiento-de-instagram) | Leer la cuenta de Instagram de Guani y guardar sus métricas (lo hace solo el temporizador cada 3 h) | en seco no; `--execute` escribe las tablas `instagram_*` y renueva el token si toca | no |
 | [Visitantes únicos del sitio](#visitantes-únicos-del-sitio) | Cuántas personas distintas abrieron el sitio público un día | no | no |
 | [`saimc.validation.lane0`](#carril-0-sobre-lo-pendiente) | Aplica el carril 0 a los pendientes que ya tienen propuesta | en seco no; `--execute` descarta | no |
@@ -392,7 +393,7 @@ Un problema se avisa una vez, se recuerda a las 24 h, avisa si empeora y avisa c
 Crea los **borradores** de las tarjetas que tocan hoy, con las cifras hasta el **día anterior**
 (`data_through = día − 1`), y los deja en «Hoy» (`/marketing`). **No publica ni rasteriza**: el
 operador revisa, aprueba (ahí se congelan las cifras y se hace el JPEG) y publica desde el
-teléfono. Normalmente lo corre solo `saimc-marketing.timer` a las 06:00 de La Habana; esto es para
+teléfono. Normalmente lo corre solo `saimc-marketing.timer` a las 05:00 de La Habana; esto es para
 probarlo o adelantarlo. Desde F2 (`docs/spec-slice-fabrica-publicaciones.md`) ya no acepta
 `--out-dir`.
 
@@ -421,8 +422,61 @@ probarlo o adelantarlo. Desde F2 (`docs/spec-slice-fabrica-publicaciones.md`) ya
 - **Instalar el temporizador (una vez):**
   `sudo cp systemd/saimc-marketing.service systemd/saimc-marketing.timer /etc/systemd/system/ &&
   sudo systemctl daemon-reload && sudo systemctl enable --now saimc-marketing.timer`.
-  Verificar el huso: `systemctl list-timers saimc-marketing.timer` debe mostrar las 06:00 de Cuba
-  (10:00 UTC en horario de verano, 11:00 UTC en invierno).
+  Verificar el huso: `systemctl list-timers saimc-marketing.timer` debe mostrar las 05:00 de Cuba
+  (09:00 UTC en horario de verano, 10:00 UTC en invierno). Era a las 06:00 hasta el 2026-10-20:
+  se adelantó una hora para que el operador alcance a aprobar antes del envío al canal. Si el
+  temporizador ya estaba instalado, hay que volver a copiarlo y hacer `daemon-reload`.
+
+### Publicar en el canal de WhatsApp
+
+Manda al canal de WhatsApp de Guani la publicación **ya aprobada** del lote de hoy para un turno:
+`datos` o `educativo`. Una lámina por mensaje (el JPEG que hizo Aprobar) y el texto del post, sin
+los hashtags de Instagram, en la primera. Sale por una **segunda sesión de WAHA**, con un número
+aparte del de la ingesta (`docs/decisions.md`, 2026-10-20). Normalmente lo corren solos
+`saimc-canal-datos.timer` (06:00 de La Habana) y `saimc-canal-educativo.timer` (10:00); esto es
+para probarlo o reenviar.
+
+```
+.venv/bin/python -m saimc.marketing.channel --slot datos                     # en seco: dice qué mandaría
+.venv/bin/python -m saimc.marketing.channel --slot datos --execute           # lo manda
+.venv/bin/python -m saimc.marketing.channel --slot educativo --day 2026-10-20 --execute
+```
+
+- **Solo lo aprobado**: estado `approved` (o `published`, si ya se subió a Instagram) del día y el
+  turno pedidos. Un borrador no sale nunca: lo que no se aprobó a tiempo no se publica.
+- **Se puede repetir**: lo enviado queda anotado en `marketing_posts.channel_slides_sent` lámina
+  por lámina y en `channel_sent_at` al completar. Si WAHA falla a mitad, la repetición sigue desde
+  la lámina siguiente (sin texto, que ya salió con la primera); una ya completa dice «ya enviada»
+  y no se manda de nuevo.
+- **Cambia algo**: solo con `--execute`: manda mensajes al canal (públicos, no se deshacen desde
+  acá) y escribe esas dos columnas. En seco no llama a WAHA. **Gasta**: no.
+- **Código de salida 1** si no hay nada aprobado, falta configuración, falta una imagen o WAHA
+  falló: la unidad queda en «failed» (`systemctl --failed`,
+  `journalctl -u saimc-canal@datos.service -n 50`). Lo que falta lo dice la salida.
+- **Configuración** (`.env`): `SAIMC_WAHA_CHANNEL_SESSION` (por defecto `guani-canal`) y
+  `SAIMC_WAHA_CHANNEL_ID` (el JID `…@newsletter` del canal; vacío = apagado). Usa además
+  `SAIMC_WAHA_BASE_URL` y `SAIMC_WAHA_API_KEY`, los mismos de la ingesta. Se niega a publicar si
+  la sesión del canal es la misma que `SAIMC_WAHA_SESSION`.
+- **Migración**: necesita la `0034` (`.venv/bin/alembic upgrade head`, con la
+  [secuencia de deploy](#después-de-un-deploy-la-secuencia)).
+- **Vincular el número (una vez):** 1) WAHA tiene que ser **2026.6.1 o posterior**: desde esa
+  versión la imagen gratuita `devlikeapro/waha` trae varias sesiones y envío de imágenes (antes
+  era de WAHA Plus). Sin verificar contra la instancia del VPS: mirar la versión en el panel de
+  WAHA. 2) En el panel de WAHA (`http://127.0.0.1:3000/dashboard`, por túnel SSH) crear la sesión
+  `guani-canal` y escanear el QR con el teléfono del **número nuevo**, nunca con el de la ingesta.
+  3) Ese número tiene que ser dueño o administrador del canal de Guani. 4) Sacar el id del canal:
+  `curl -s -H "X-Api-Key: $SAIMC_WAHA_API_KEY" http://127.0.0.1:3000/api/guani-canal/channels`
+  (sin verificar contra la instancia real) y copiar el `id` que termina en `@newsletter`.
+  5) Ponerlo en el `.env`: `SAIMC_WAHA_CHANNEL_ID=...@newsletter`. 6) Probar en seco y después con
+  `--execute` sobre una publicación aprobada.
+- **La ingesta no se mezcla**: el webhook de WAHA es uno para todo el contenedor, así que los
+  eventos de `guani-canal` también llegan a `/webhooks/whatsapp`. Se descartan con 200 (en el log:
+  `webhook.descartado motivo=otra_sesion`). Requiere reiniciar `saimc.service` con este código.
+- **Instalar los temporizadores (una vez):**
+  `sudo cp systemd/saimc-canal@.service systemd/saimc-canal-datos.timer systemd/saimc-canal-educativo.timer /etc/systemd/system/ &&
+  sudo systemctl daemon-reload && sudo systemctl enable --now saimc-canal-datos.timer saimc-canal-educativo.timer`.
+  Verificar: `systemctl list-timers 'saimc-canal*'` debe mostrar las 06:00 y las 10:00 de Cuba.
+  Correr uno ya: `sudo systemctl start saimc-canal@datos.service`.
 
 ### Seguimiento de Instagram
 
@@ -862,7 +916,10 @@ Hay tres unidades: `saimc.service` (la aplicación, **sin archivo en `systemd/`*
 `saimc-backup.service` + `.timer` (respaldo diario 03:00) y `saimc-prefill.service` + `.timer`
 (pre-cálculo cada 3 h). Las dos últimas están en [`systemd/`](../systemd/saimc-prefill.service).
 También están ahí `saimc-alerts` (avisos, cada 15 min) y `saimc-instagram` (cuenta de Instagram,
-cada 3 h a y media; instalación en [Seguimiento de Instagram](#seguimiento-de-instagram)). Sus
+cada 3 h a y media; instalación en [Seguimiento de Instagram](#seguimiento-de-instagram)),
+`saimc-marketing` (borradores del día, 05:00) y `saimc-canal@` con `saimc-canal-datos` y
+`saimc-canal-educativo` (envío al canal de WhatsApp, 06:00 y 10:00; instalación en
+[Publicar en el canal de WhatsApp](#publicar-en-el-canal-de-whatsapp)). Sus
 comandos son los mismos de abajo cambiando el nombre de la unidad, p. ej.
 `journalctl -u saimc-instagram.service -n 50`.
 

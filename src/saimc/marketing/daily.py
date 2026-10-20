@@ -4,7 +4,7 @@
     python -m saimc.marketing.daily --execute          # crea los borradores y purga lo vencido
     python -m saimc.marketing.daily --day 2026-10-19   # un día puntual (default: hoy en La Habana)
 
-Un temporizador de systemd lo corre a las 06:00 de La Habana
+Un temporizador de systemd lo corre a las 05:00 de La Habana
 (`systemd/saimc-marketing.timer`): lee, escribe y termina, igual que el
 pre-cálculo. Sin cola ni proceso permanente (decisión cerrada 3). **No publica
 nada** y, desde F2 (`docs/spec-slice-fabrica-publicaciones.md`), tampoco

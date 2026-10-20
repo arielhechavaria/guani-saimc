@@ -31,7 +31,12 @@ from sqlalchemy.orm import Session
 from saimc.config import get_settings
 from saimc.ingestion.inbox import ingest_inbox
 from saimc.ingestion.whatsapp_media import fetch_media, is_trusted_media_url
-from saimc.ingestion.whatsapp_webhook import ParsedMessage, parse_message, verify_hmac
+from saimc.ingestion.whatsapp_webhook import (
+    ParsedMessage,
+    is_foreign_session,
+    parse_message,
+    verify_hmac,
+)
 from saimc.models import Channel
 from saimc.models.raw_ingestion import SourceType
 from saimc.web.deps import get_db
@@ -128,6 +133,13 @@ async def whatsapp_webhook(request: Request, db: Session = Depends(get_db)) -> J
     except ValueError:
         logger.warning("webhook.descartado motivo=json_invalido")
         return JSONResponse({"ingested": 0, "reason": "json inválido"})
+
+    if is_foreign_session(body, settings.waha_session):
+        # La sesión del canal de Guani (2026-10-20) comparte el webhook global
+        # de WAHA. 200 para que WAHA no reintente; INFO porque es tráfico
+        # esperado, no una pérdida.
+        logger.info("webhook.descartado motivo=otra_sesion sesion=%s", body.get("session"))
+        return JSONResponse({"ingested": 0, "reason": "otra sesión de WAHA"})
 
     mensaje = parse_message(body, settings.sender_hash_key)
     if mensaje is None:

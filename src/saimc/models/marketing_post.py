@@ -1,7 +1,7 @@
 """Publicaciones de la fábrica de `/marketing` y sus diapositivas (F2 de
 `docs/plan-fabrica-marketing.md`; `docs/spec-slice-fabrica-publicaciones.md`).
 
-Una publicación nace borrador (la crea el lote de las 06:00 o el operador), se
+Una publicación nace borrador (la crea el lote de las 05:00 o el operador), se
 aprueba —se congelan los datos en `snapshot` y se rasteriza el JPEG—, y se
 marca publicada con el enlace del post. O se descarta. Las transiciones viven
 en `saimc.marketing.posts`; acá están las tablas y la única garantía que no
@@ -108,6 +108,16 @@ class MarketingPost(Base):
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     discarded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Envío al canal de WhatsApp (`saimc.marketing.channel`, 2026-10-20).
+    # Cuántas láminas ya salieron, en orden: si un envío se corta a mitad, la
+    # repetición sigue desde la siguiente y no duplica. `channel_sent_at` se
+    # fija recién al completar todas.
+    channel_slides_sent: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    channel_sent_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     slides: Mapped[list["MarketingPostSlide"]] = relationship(
         back_populates="post",
