@@ -201,6 +201,12 @@ class Settings(BaseSettings):
     # Apagado, el pre-cálculo es el de siempre. Lo aceptado se audita en
     # `/curation/auditoria` y el freno se pone solo (`validation.lane1`).
     lane1_enabled: bool = False
+    # Carril 1 para imágenes (slice OCR como texto,
+    # `docs/spec-slice-ocr-como-texto.md`): con `lane1_enabled` también
+    # encendido, una imagen se acepta sola si el motor la manda al carril 1
+    # leyendo el texto de su OCR. Tiene freno, auditoría y cota propios, aparte
+    # de los del texto. Nace apagado; solo, sin `lane1_enabled`, no hace nada.
+    lane1_image_enabled: bool = False
     # Tope de filas por anuncio del carril 1 (`validation.lane1.build_config`).
     # 0 = sin tope, el valor por defecto desde el 2026-10-19 (listas largas de
     # los almacenes, `docs/spec-slice-lane1-sin-tope.md`). Un N positivo

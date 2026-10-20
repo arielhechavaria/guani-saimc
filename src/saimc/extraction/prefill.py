@@ -322,8 +322,10 @@ class RunResult:
     auto_discarded: dict[str, int] = field(
         default_factory=lambda: dict.fromkeys(_TYPE_LABELS, 0)
     )
-    #: Textos que el carril 1 aceptó solos en esta corrida (B2b-2).
+    #: Anuncios que el carril 1 aceptó solos en esta corrida (B2b-2).
     auto_accepted: int = 0
+    #: De ellos, imágenes (por su OCR, slice OCR como texto).
+    auto_accepted_images: int = 0
 
 
 def run_prefill(
@@ -345,6 +347,7 @@ def run_prefill(
     lane0_jev_images: bool = False,
     lane1_fetcher: Fetcher | None = None,
     lane1_gate: lane1.Gate | None = None,
+    lane1_images: bool = False,
     out: Callable[[str], None] = print,
     llm: LLMConfig | None = None,
 ) -> RunResult:
@@ -366,7 +369,15 @@ def run_prefill(
     `lane1_fetcher` enciende el carril 1 (`validation.lane1`): es de dónde sale
     la tasa de cambio de una fila en divisa. `None`, ningún anuncio se acepta
     solo. Va después del carril 0 y solo si este no descartó. `lane1_gate` es
-    su freno (`validation.lane1.Gate`): con él puesto, nada se acepta.
+    su freno (`validation.lane1.Gate`), uno por tipo: con el de un tipo
+    puesto, nada de ese tipo se acepta. `lane1_images` deja entrar también
+    las imágenes (`validation.lane1.image_enabled`, slice OCR como texto).
+
+    Un solo texto por anuncio (slice OCR como texto): el carril 0 y el carril 1
+    reciben el mismo, ya redactado. De un texto, el original (redactado en la
+    ingesta); de una imagen, su OCR guardado, redactado otra vez por si acaso
+    (`redact_personal_data` es idempotente). Ninguno lee `original_text` de una
+    imagen.
 
     Con `max_cost`, antes de cada llamada se frena si el acumulado más lo que
     se espera que cueste la siguiente lo pasaría. «Lo que se espera» es el
@@ -419,6 +430,14 @@ def run_prefill(
         stored = llm_store.save_proposal(
             session, ingestion_id=ingestion.id, result=proposal, model=model
         )
+        # El texto que vio el modelo: el de un texto ya viene redactado de la
+        # ingesta; el OCR de una imagen se redacta acá, igual que en el borde
+        # de `propose_ad`. Es el mismo para los dos carriles.
+        lane_text = (
+            text
+            if ingestion.content_type == ContentType.TEXT
+            else redact_personal_data(text) or ""
+        )
         auto_discarded = (
             stored is not None
             and str(ingestion.content_type) in lane0_types
@@ -427,14 +446,7 @@ def run_prefill(
                 ingestion,
                 stored,
                 proposal,
-                # El texto que vio el modelo: el de un texto ya viene redactado
-                # de la ingesta; el OCR de una imagen se redacta acá, igual que
-                # en el borde de `propose_ad`.
-                text=(
-                    text
-                    if ingestion.content_type == ContentType.TEXT
-                    else redact_personal_data(text) or ""
-                ),
+                text=lane_text,
                 catalog=catalog,
                 jev_hash=lane0_jev_hash,
                 arbiter=lane0_jev_arbiter,
@@ -450,10 +462,11 @@ def run_prefill(
                 ingestion,
                 stored,
                 proposal,
-                text=text,
+                text=lane_text,
                 catalog=catalog,
                 fetcher=lane1_fetcher,
                 gate=lane1_gate,
+                images=lane1_images,
             )
         )
         session.commit()
@@ -471,6 +484,8 @@ def run_prefill(
             tipo = str(ingestion.content_type)
             result.auto_discarded[tipo] = result.auto_discarded.get(tipo, 0) + 1
         result.auto_accepted += auto_accepted
+        if auto_accepted and ingestion.content_type != ContentType.TEXT:
+            result.auto_accepted_images += 1
         result.cost_usd += _cost(proposal.input_tokens, proposal.output_tokens, model) or 0.0
         estado = (
             f"DEGRADADO ({proposal.failure})"
@@ -675,6 +690,7 @@ def _run_mode(
             (rate_fetcher or lane1.rate_fetcher(settings)) if lane1.enabled(settings) else None
         ),
         lane1_gate=lane1_gate,
+        lane1_images=lane1.image_enabled(settings),
         out=out,
     )
     out(
@@ -689,12 +705,24 @@ def _run_mode(
         )
         + ("" if lane0_types else " (interruptores apagados)")
     )
+    images = lane1.image_enabled(settings)
     out(
         f"Aceptados solos (carril 1): {result.auto_accepted}"
         + ("" if lane1.enabled(settings) else " (interruptor apagado)")
         + (
+            f" — texto {result.auto_accepted - result.auto_accepted_images}, "
+            f"imagen {result.auto_accepted_images}"
+            if images
+            else ""
+        )
+        + (
             f" — freno puesto: {lane1_gate.brake.reason}"
             if lane1_gate is not None and lane1_gate.brake.on
+            else ""
+        )
+        + (
+            f" — freno de imágenes puesto: {lane1_gate.brake_of(lane1.IMAGE).reason}"
+            if images and lane1_gate is not None and lane1_gate.brake_of(lane1.IMAGE).on
             else ""
         )
     )

@@ -634,6 +634,16 @@ def test_caso_36_imagen_en_canal_nuevo_no_entra_al_carril_1() -> None:
     assert resultado.reasons == ("el anuncio es una imagen: las imágenes no entran al carril 1",)
 
 
+def test_una_imagen_entra_al_carril_1_solo_con_lane1_images() -> None:
+    # Slice OCR como texto: la misma imagen del caso 36, leída por su OCR,
+    # entra cuando la configuración admite imágenes; nada más cambia.
+    ctx = _caso_1(tipo="image", canal=SIN_HISTORIAL, celdas=(CELDA_VACIA,))
+
+    resultado = validate_ad(ctx, CONFIG_B2B, lane1_images=True)
+
+    assert resultado.lane == 1
+
+
 def test_caso_37_canal_sin_provincia_sigue_frenando() -> None:
     # La regla 3 en `unknown` no es de las que dejan de frenar.
     canal = replace(SIN_HISTORIAL, province_id=None)

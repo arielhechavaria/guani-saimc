@@ -34,6 +34,7 @@ from saimc.extraction import llm_propose_ad, ocr_store, prefill
 from saimc.models import (
     Channel,
     ContentType,
+    CurationAction,
     CurationEvent,
     JevSignal,
     LlmProposal,
@@ -45,7 +46,7 @@ from saimc.models import (
     RawIngestion,
     SourceType,
 )
-from saimc.validation import jev_signal, lane0
+from saimc.validation import jev_signal, lane0, lane1
 from tests.jev_fakes import FAKE_KEY, Api, choice, client, noul
 
 TEXT = ContentType.TEXT.value
@@ -215,10 +216,145 @@ def _estado(session: Session, ingesta: RawIngestion) -> str:
 # --- los tres interruptores ------------------------------------------------------
 
 
+def test_los_tres_interruptores_nacen_apagados() -> None:
+    ajustes = Settings(_env_file=None)  # type: ignore[call-arg]
+
+    assert ajustes.lane0_image_enabled is False
+    assert ajustes.lane1_image_enabled is False
+    assert ajustes.jev_ocr_enabled is False
+
+
 # --- carril 1: aceptación automática de imágenes ---------------------------------
 
 
+def test_con_el_interruptor_de_imagenes_apagado_una_imagen_con_ocr_perfecto_no_se_acepta(
+    session: Session, mundo: SimpleNamespace, tmp_path: Path
+) -> None:
+    imagen = _anuncio(session, mundo.canal, tipo=IMAGE)
+
+    _precalcular(session, tmp_path, lane1_enabled=True)
+
+    assert _estado(session, imagen) == ProcessingStatus.PENDING
+    assert _filas(session, imagen) == []
+    assert _eventos(session, imagen) == []
+
+
+def test_el_interruptor_de_imagenes_exige_el_del_carril_1(
+    session: Session, mundo: SimpleNamespace, tmp_path: Path
+) -> None:
+    imagen = _anuncio(session, mundo.canal, tipo=IMAGE)
+
+    _precalcular(session, tmp_path, lane1_enabled=False, lane1_image_enabled=True)
+
+    assert _estado(session, imagen) == ProcessingStatus.PENDING
+    assert _filas(session, imagen) == []
+
+
+def test_encendido_una_imagen_con_propuesta_completa_se_acepta_y_el_evento_dice_ocr(
+    session: Session, mundo: SimpleNamespace, tmp_path: Path
+) -> None:
+    imagen = _anuncio(session, mundo.canal, tipo=IMAGE)
+
+    salida = _precalcular(session, tmp_path, lane1_enabled=True, lane1_image_enabled=True)
+
+    assert _estado(session, imagen) == ProcessingStatus.CURATED
+    (fila,) = _filas(session, imagen)
+    assert fila.product_id == mundo.arroz.id
+    assert fila.price == Decimal("320")
+    assert fila.currency == "CUP"
+    assert fila.quantity == Decimal("1")
+    assert fila.unit == "lb"
+    assert fila.province_id == mundo.lh.id
+    assert fila.published_date == date(2026, 9, 1)
+    # `provenance` no cambia: es una fila automática como las de texto.
+    assert fila.provenance == "auto"
+    (evento,) = _eventos(session, imagen)
+    assert (evento.action, evento.mode) == (CurationAction.CURATED, "auto")
+    assert evento.detail == {"row_count": 1, "text_source": "ocr"}
+    assert "imagen 1" in salida
+
+
+def test_un_texto_aceptado_no_lleva_text_source(
+    session: Session, mundo: SimpleNamespace, tmp_path: Path
+) -> None:
+    texto = _anuncio(session, mundo.canal)
+
+    _precalcular(session, tmp_path, lane1_enabled=True, lane1_image_enabled=True)
+
+    (evento,) = _eventos(session, texto)
+    assert evento.detail == {"row_count": 1}
+
+
 # --- freno por tipo ---------------------------------------------------------------
+
+
+def _aceptados_y_auditados(
+    session: Session, tmp_path: Path, canal: Channel, tipo: str, *, errores: int
+) -> None:
+    """60 anuncios de `tipo` aceptados solos y auditados: `errores` no válidos y
+    el resto «está bien»."""
+    ingestas = [_anuncio(session, canal, tipo=tipo, minutos=i) for i in range(60)]
+    _precalcular(session, tmp_path, lane1_enabled=True, lane1_image_enabled=True)
+    for ingesta in ingestas:
+        assert _estado(session, ingesta) == ProcessingStatus.CURATED
+    for ingesta in ingestas[:errores]:
+        assert lane1.mark_invalid(session, ingesta.id, "no_data")
+    for ingesta in ingestas[errores:]:
+        assert lane1.mark_ok(session, ingesta.id)
+    session.commit()
+
+
+def test_freno_60_imagenes_con_error_frenan_las_imagenes_y_no_los_textos(
+    session: Session, mundo: SimpleNamespace, tmp_path: Path
+) -> None:
+    _aceptados_y_auditados(session, tmp_path, mundo.canal, IMAGE, errores=7)
+    ajustes = _ajustes(tmp_path)
+
+    assert lane1.brake(session, ajustes, content_type=IMAGE).on is True
+    assert lane1.brake(session, ajustes, content_type=TEXT).on is False
+    imagenes = lane1.audit_state(session, ajustes, content_type=IMAGE)
+    assert (imagenes.audited, imagenes.errors) == (60, 7)
+    textos = lane1.audit_state(session, ajustes, content_type=TEXT)
+    assert (textos.audited, textos.errors) == (0, 0)
+
+    # Y en la corrida: el texto entra, la imagen no.
+    texto = _anuncio(session, mundo.otro, minutos=500)
+    imagen = _anuncio(session, mundo.otro, tipo=IMAGE, minutos=501)
+    salida = _precalcular(session, tmp_path, lane1_enabled=True, lane1_image_enabled=True)
+
+    assert _estado(session, texto) == ProcessingStatus.CURATED
+    assert _estado(session, imagen) == ProcessingStatus.PENDING
+    assert "freno de imágenes puesto" in salida
+
+
+def test_freno_60_textos_con_error_frenan_los_textos_y_no_las_imagenes(
+    session: Session, mundo: SimpleNamespace, tmp_path: Path
+) -> None:
+    _aceptados_y_auditados(session, tmp_path, mundo.canal, TEXT, errores=7)
+    ajustes = _ajustes(tmp_path)
+
+    assert lane1.brake(session, ajustes, content_type=TEXT).on is True
+    assert lane1.brake(session, ajustes, content_type=IMAGE).on is False
+
+    texto = _anuncio(session, mundo.otro, minutos=500)
+    imagen = _anuncio(session, mundo.otro, tipo=IMAGE, minutos=501)
+    _precalcular(session, tmp_path, lane1_enabled=True, lane1_image_enabled=True)
+
+    assert _estado(session, texto) == ProcessingStatus.PENDING
+    assert _estado(session, imagen) == ProcessingStatus.CURATED
+
+
+def test_el_resumen_muestra_las_dos_cotas_por_separado(
+    session: Session, mundo: SimpleNamespace, tmp_path: Path
+) -> None:
+    _aceptados_y_auditados(session, tmp_path, mundo.canal, IMAGE, errores=7)
+
+    resumen = lane1.summary(session, _ajustes(tmp_path, lane1_image_enabled=True))
+
+    assert (resumen.state.audited, resumen.state.errors) == (0, 0)
+    assert resumen.brake.on is False
+    assert (resumen.images.audited, resumen.images.errors) == (60, 7)
+    assert resumen.image_brake.on is True
 
 
 # --- Jev sobre el OCR ---------------------------------------------------------------
@@ -420,6 +556,48 @@ def test_el_comando_del_carril_0_mira_las_imagenes_por_su_ocr_guardado(
 # --- el pre-cálculo pasa el texto redactado a las tres piezas ---------------------
 
 
+def test_run_prefill_pasa_el_texto_redactado_de_la_imagen_a_las_tres_piezas(
+    session: Session, mundo: SimpleNamespace, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    imagen = _anuncio(session, mundo.canal, tipo=IMAGE)
+    _con_ocr(session, imagen, f"Arroz a 320 la libra, llamar al {TELEFONO}", tmp_path)
+    vistos: dict[str, str] = {}
+    original_0, original_1 = lane0.apply_lane_0, lane1.apply_lane_1
+
+    def espia_0(*args: Any, **kw: Any) -> bool:
+        vistos["carril 0"] = kw["text"]
+        return original_0(*args, **kw)
+
+    def espia_1(*args: Any, **kw: Any) -> bool:
+        vistos["carril 1"] = kw["text"]
+        return original_1(*args, **kw)
+
+    monkeypatch.setattr(lane0, "apply_lane_0", espia_0)
+    monkeypatch.setattr(lane1, "apply_lane_1", espia_1)
+    api = Api()
+
+    _precalcular(
+        session,
+        tmp_path,
+        ocr=_ocr_prohibido,
+        api=api,
+        **_jev(
+            jev_ocr_enabled=True,
+            lane0_image_enabled=True,
+            lane1_enabled=True,
+            lane1_image_enabled=True,
+        ),
+    )
+
+    (pedido,) = api.payloads()
+    vistos["Jev"] = pedido["state"]
+    assert set(vistos) == {"carril 0", "carril 1", "Jev"}
+    for pieza, texto in vistos.items():
+        assert TELEFONO not in texto, pieza
+        assert "[teléfono removido]" in texto, pieza
+        assert "Arroz a 320 la libra" in texto, pieza
+
+
 # --- selección del pre-cálculo ------------------------------------------------------
 
 
@@ -486,3 +664,40 @@ def test_stale_incluye_una_imagen_con_ocr_guardado_y_no_una_sin_ocr(
 # --- el comando del carril 1 sobre lo pendiente ------------------------------------
 
 
+def _comando(session: Session, tmp_path: Path, *argv: str, **ajustes: Any) -> str:
+    salida: list[str] = []
+    lane1.run(
+        lane1.parse_args(list(argv)),
+        session,
+        _ajustes(tmp_path, **ajustes),
+        rate_fetcher=_sin_tasa,
+        out=salida.append,
+    )
+    return "\n".join(salida)
+
+
+def test_el_comando_del_carril_1_en_seco_muestra_las_imagenes_aparte(
+    session: Session, mundo: SimpleNamespace, tmp_path: Path
+) -> None:
+    imagen = _anuncio(session, mundo.canal, tipo=IMAGE)
+    _precalcular(session, tmp_path)  # deja la propuesta, con el carril apagado
+
+    salida = _comando(session, tmp_path)
+
+    assert "imágenes 1 de 1" in salida
+    assert _estado(session, imagen) == ProcessingStatus.PENDING
+
+
+def test_el_comando_del_carril_1_acepta_imagenes_solo_con_su_interruptor(
+    session: Session, mundo: SimpleNamespace, tmp_path: Path
+) -> None:
+    imagen = _anuncio(session, mundo.canal, tipo=IMAGE)
+    _precalcular(session, tmp_path)
+
+    _comando(session, tmp_path, "--execute", lane1_enabled=True)
+    assert _estado(session, imagen) == ProcessingStatus.PENDING
+
+    _comando(session, tmp_path, "--execute", lane1_enabled=True, lane1_image_enabled=True)
+    assert _estado(session, imagen) == ProcessingStatus.CURATED
+    (evento,) = _eventos(session, imagen)
+    assert evento.detail == {"row_count": 1, "text_source": "ocr"}
