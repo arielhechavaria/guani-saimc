@@ -45,8 +45,8 @@ class DonateQr:
 
 #: (rótulo, nombre del archivo en `static/`), en el orden en que se dibujan.
 _DONATE_QR_FILES: tuple[tuple[str, str], ...] = (
-    ("Tarjeta Clásica", "apoyar-qr-clasica.png"),
-    ("Tarjeta Bandec", "apoyar-qr-bandec.png"),
+    ("Tarjeta Clásica", "apoyar-qr-clasica.jpg"),
+    ("Tarjeta BPA", "apoyar-qr-bpa.jpg"),
 )
 
 
