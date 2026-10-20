@@ -22,12 +22,14 @@ diseño, antes de que existiera el módulo `site_pages`.
 import re
 from collections.abc import Iterator
 from datetime import date
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from saimc.config import Settings
+from saimc.web import site_pages
 from saimc.web.app import app
 from saimc.web.deps import get_db
 from saimc.web.routers import public
@@ -533,3 +535,98 @@ class TestElTableroSigueSinEstePie:
 
         assert respuesta.status_code == 200
         assert '<footer class="pf"' not in respuesta.text
+
+
+TROPIPAY = "https://www.tropipay.com/guani"
+
+
+@pytest.fixture(autouse=True)
+def sin_qr(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Sin QR salvo que la prueba lo pida (`con_qr`), estén o no los del repo."""
+    monkeypatch.setattr(site_pages, "DONATE_QR_DIR", tmp_path)
+
+
+@pytest.fixture
+def con_qr(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    (tmp_path / "apoyar-qr-clasica.jpg").write_bytes(b"png")
+    (tmp_path / "apoyar-qr-bpa.png").write_bytes(b"png")
+    monkeypatch.setattr(site_pages, "DONATE_QR_DIR", tmp_path)
+
+
+class TestApoyar:
+    """`/apoyar` existe si y solo si hay enlace de donación o QR."""
+
+    @pytest.mark.usefixtures("sin_qr")
+    def test_sin_configuracion_no_existe_ni_se_enlaza(self, client: TestClient) -> None:
+        assert client.get("/apoyar").status_code == 404
+        for ruta in ("/", *RUTAS):
+            assert 'href="/apoyar"' not in client.get(ruta).text, ruta
+
+    @pytest.mark.usefixtures("sin_qr")
+    def test_un_enlace_que_no_es_web_no_cuenta(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(public, "get_settings", lambda: _settings(donate_url="javascript:alert(1)"))
+        assert client.get("/apoyar").status_code == 404
+
+    @pytest.mark.usefixtures("sin_qr")
+    def test_con_enlace_muestra_el_boton_exacto_y_no_el_qr(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(public, "get_settings", lambda: _settings(donate_url=TROPIPAY))
+
+        respuesta = client.get("/apoyar")
+
+        assert respuesta.status_code == 200
+        assert "<title>Apoyar a Guani — Guani</title>" in respuesta.text
+        cuerpo = respuesta.text.split("<footer")[0]
+        assert f'href="{TROPIPAY}"' in cuerpo
+        assert "apoyar-qr" not in cuerpo
+        assert ("Apoyar", "/apoyar") in _columna(_pie(respuesta.text), "Guani")
+
+    @pytest.mark.usefixtures("sin_qr")
+    def test_el_enlace_aparece_en_el_pie_de_todas_las_paginas(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(public, "get_settings", lambda: _settings(donate_url=TROPIPAY))
+        for ruta in ("/", *RUTAS):
+            assert ("Apoyar", "/apoyar") in _columna(_pie(client.get(ruta).text), "Guani"), ruta
+
+    @pytest.mark.usefixtures("con_qr")
+    def test_solo_con_el_archivo_del_qr_existe_y_lo_muestra_con_alt(self, client: TestClient) -> None:
+        respuesta = client.get("/apoyar")
+
+        assert respuesta.status_code == 200
+        assert 'src="/static/apoyar-qr-clasica.jpg"' in respuesta.text
+        assert 'src="/static/apoyar-qr-bpa.png"' in respuesta.text
+        assert "Tarjeta Clásica" in respuesta.text and "Tarjeta BPA" in respuesta.text
+        assert respuesta.text.count('alt="Código QR') == 2
+        assert 'class="pg-btn"' not in respuesta.text
+
+    def test_con_un_solo_archivo_se_muestra_solo_ese_qr(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        (tmp_path / "apoyar-qr-bpa.png").write_bytes(b"png")
+        monkeypatch.setattr(site_pages, "DONATE_QR_DIR", tmp_path)
+
+        texto = client.get("/apoyar").text
+
+        assert "apoyar-qr-bpa.png" in texto
+        assert "apoyar-qr-clasica.jpg" not in texto
+
+    @pytest.mark.usefixtures("con_qr")
+    def test_no_muestra_tarjetas_ni_paypal(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(public, "get_settings", lambda: _settings(donate_url=TROPIPAY))
+        texto = _visible(client.get("/apoyar").text).lower()
+        assert "paypal" not in texto
+        assert not re.search(r"\d{4}[ -]?\d{4}[ -]?\d{4}", texto)
+        assert not VOSEO.search(texto)
+
+    @pytest.mark.usefixtures("sin_qr")
+    def test_el_lead_de_contacto_incluye_sugerir_una_idea(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(public, "get_settings", lambda: _settings(contact_email="hola@guani.example"))
+        assert "sugerir una idea" in client.get("/contacto").text

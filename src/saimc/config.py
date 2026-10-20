@@ -297,6 +297,11 @@ class Settings(BaseSettings):
     link_telegram: str | None = None
     contact_email: str | None = None
 
+    # Enlace de donación (QvaPay, TropiPay u otro) de `/apoyar` (2026-10-20). Opcional y solo
+    # `http(s)://`, como los enlaces de arriba. Sin él y sin el QR
+    # (`static/apoyar-qr-*`) la página no existe.
+    donate_url: str | None = None
+
     # Procedencia del `price_basis` retro-completado por inferencia en las
     # filas anteriores al campo (docs/decisions.md, 2026-09-02). Mismo lugar y
     # mismo motivo que `llm_assist_log_path`: ata ids de la base de producción,

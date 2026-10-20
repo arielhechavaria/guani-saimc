@@ -119,6 +119,8 @@ from saimc.web.series_view import build_series
 from saimc.web.site_pages import (
     CONTACT_PATH,
     CONTACT_TEMPLATE,
+    DONATE_PATH,
+    DONATE_TEMPLATE,
     SITE_PAGES,
     SiteFooter,
     SitePage,
@@ -1079,6 +1081,16 @@ def public_contact(request: Request) -> HTMLResponse:
     if not _site_footer().has_contact:
         raise HTTPException(status_code=404, detail="No hay página de contacto")
     return _render_site_page(request, CONTACT_TEMPLATE)
+
+
+@router.get(DONATE_PATH, response_class=HTMLResponse)
+def public_donate(request: Request) -> HTMLResponse:
+    """Apoyar a Guani: el enlace de donación (`SAIMC_DONATE_URL`) y/o el QR
+    (`static/apoyar-qr-*`). Sin ninguno la página no existe —404— y ni el pie
+    ni la landing la enlazan: todo sale de `SiteFooter.has_donate`."""
+    if not _site_footer().has_donate:
+        raise HTTPException(status_code=404, detail="No hay página de apoyo")
+    return _render_site_page(request, DONATE_TEMPLATE)
 
 
 @router.get(HOME_PATH, response_class=HTMLResponse)

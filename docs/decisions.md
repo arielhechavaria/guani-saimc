@@ -13031,6 +13031,36 @@ Decisión: se revierten `bc2bbae` y `a6e905b`: vuelven el busto SVG gris v5 en `
 Descartado: dejar la foto solo en redes y el gris en el sitio: dos identidades para la misma marca, mismo motivo que el 2026-10-19 en sentido contrario.
 Consecuencia: un solo avatar en todas partes, el SVG gris. Las piezas de marketing ya aprobadas con la foto no se regeneran solas.
 
+## 2026-10-20 — Donaciones: botón de TropiPay y QR en /apoyar, sin tarjeta ni PayPal
+Contexto: el operador quiere un llamado visible a sugerir ideas y una forma de recibir apoyo. Los usuarios cubanos pagan con Transfermóvil/EnZona; los de fuera, con tarjeta.
+Decisión: nueva página `/apoyar` con el botón «Apoyar a Guani» hacia el enlace de TropiPay (`SAIMC_DONATE_URL`, solo http/https) y un QR para cuentas cubanas, que es un archivo que pone el operador (`src/saimc/web/static/apoyar-qr.png`) y se muestra solo si existe. La página, su enlace en la columna «Guani» del pie y el bloque «¿Tienes una idea o una sugerencia?» de la landing existen si y solo si hay enlace o QR (mismo principio que `/contacto`); sin ninguno, `/apoyar` da 404. El texto dice a dónde va el dinero y que donar no da acceso ni influye en los precios.
+Descartado: el PayPal del hermano (mezcla una cuenta personal con la marca), publicar números de tarjeta (datos sensibles expuestos a cualquiera) y una pasarela propia como Stripe (cuentas, webhooks y datos del donante: contra «sin autenticación» y la Fase 0).
+Consecuencia: Guani no guarda nada de quien dona; el pago ocurre en TropiPay o en la app del banco. Hay que poner `SAIMC_DONATE_URL` y el archivo del QR en el VPS; el QR no versiona un valor por defecto.
+
+## 2026-10-20 — El enlace de /apoyar es de QvaPay, no de TropiPay
+Contexto: la cuenta de TropiPay del operador está restringida por poco uso; la de QvaPay funciona.
+Decisión: `SAIMC_DONATE_URL` apunta al enlace de pago de QvaPay. El código no nombra al proveedor (solo «pago en línea»), así que no hay cambio funcional; solo el texto de `/apoyar` y los comentarios dejan de decir TropiPay.
+Descartado: mantener TropiPay como proveedor fijo, porque no se puede cobrar con la cuenta restringida; y atar el código a un proveedor, porque ya cambió una vez.
+Consecuencia: la entrada de arriba del mismo día sigue vigente en todo lo demás (QR para cuentas cubanas, sin tarjeta ni PayPal públicos).
+
+## 2026-10-20 — /apoyar admite un QR por tarjeta (Clásica y Bandec)
+Contexto: el operador tiene dos tarjetas cubanas (Clásica de Fincimex y Bandec) y cada una tiene su QR; el diseño inicial admitía uno solo.
+Decisión: `/apoyar` dibuja un QR por archivo existente, con su rótulo: `static/apoyar-qr-clasica.png` («Tarjeta Clásica») y `static/apoyar-qr-bandec.png` («Tarjeta Bandec»). Reemplaza `static/apoyar-qr.png` de la entrada anterior del mismo día.
+Descartado: un solo QR genérico, porque quien paga elige la app de su banco y necesita el de su tarjeta; y una variable de configuración por QR, porque un archivo en `static/` es más simple.
+Consecuencia: cada archivo aparece solo si existe; la página sigue existiendo con que haya enlace o al menos un QR.
+
+## 2026-10-20 — El segundo QR de /apoyar es de BPA y los archivos son .jpg
+Contexto: al revisar la carpeta del operador, la segunda tarjeta resultó ser del Banco Popular de Ahorro, no de Bandec, y las imágenes son JPEG.
+Decisión: los archivos pasan a `static/apoyar-qr-clasica.jpg` («Tarjeta Clásica») y `static/apoyar-qr-bpa.jpg` («Tarjeta BPA»). Corrige los nombres de la entrada anterior del mismo día; la decisión de un QR por tarjeta sigue igual.
+Descartado: convertir a PNG, porque un JPEG de un QR se sirve y escanea igual si está bien recortado.
+Consecuencia: los nombres exactos son los de arriba; con otro nombre o extensión el QR no se muestra.
+
+## 2026-10-20 — El QR de BPA pasa a .png (versión ya recortada)
+Contexto: la primera imagen de BPA era la captura completa de Transfermóvil, con hora, últimos dígitos y nombres de cuentas. El operador subió una versión recortada en PNG.
+Decisión: el archivo es `static/apoyar-qr-bpa.png`; el de la Clásica sigue en `static/apoyar-qr-clasica.jpg`. Corrige el nombre de la entrada anterior del mismo día. La captura completa no entra al repo.
+Descartado: aceptar cualquier extensión por tarjeta, porque son dos archivos fijos y un nombre exacto es más simple de operar y de probar.
+Consecuencia: con otro nombre o extensión el QR no se muestra.
+
 ## 2026-10-20 — Publicación automática en el canal de WhatsApp de Guani, con una segunda sesión de WAHA y número aparte
 Contexto: las piezas aprobadas en la fábrica de `/marketing` se publicaban a mano, y el canal de WhatsApp de Guani es donde está el público cubano. WAHA ya corre en el VPS para la ingesta (excepción vigente de la decisión 4), pero con el número que lee los canales.
 Decisión: `python -m saimc.marketing.channel --slot datos|educativo --execute` manda por `POST /api/sendImage` de WAHA, con una segunda sesión (`SAIMC_WAHA_CHANNEL_SESSION`, `guani-canal`) y un número propio, la publicación del lote de hoy y de ese turno **solo si ya está aprobada** (o publicada): una lámina por mensaje, el texto sin hashtags en la primera, pausa de 1,5 s entre láminas. Dos temporizadores (`saimc-canal@.service`): datos a las 06:00 y educativo a las 10:00 de La Habana. Idempotencia en `marketing_posts.channel_slides_sent` (por lámina, commit tras cada una) y `channel_sent_at` (al completar), migración `0034`. El webhook descarta los eventos cuya `session` no es `SAIMC_WAHA_SESSION`, porque el webhook de WAHA es global por contenedor; y el comando se niega a publicar si las dos sesiones son la misma.

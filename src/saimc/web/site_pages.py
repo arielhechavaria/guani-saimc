@@ -15,14 +15,47 @@ explorar: ahí la ausencia de pie es una decisión registrada (2026-09-21).
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 from saimc.config import Settings
-from saimc.web.landing_view import FooterLink, FooterLinks, build_footer_links
+from saimc.web.landing_view import FooterLink, FooterLinks, build_footer_links, http_url
 from saimc.web.product_nav import HOME_PATH
 
 #: Ruta de la página de contacto. Existe solo con un correo o una red puestos.
 CONTACT_PATH = "/contacto"
 CONTACT_TEMPLATE = "public_page_contacto.html"
+
+#: Ruta de la página de apoyo. Existe solo con un enlace de donación
+#: (`SAIMC_DONATE_URL`) o con el QR puesto por el operador.
+DONATE_PATH = "/apoyar"
+DONATE_TEMPLATE = "public_page_apoyar.html"
+#: Los QR para pagar desde cuentas cubanas (Transfermóvil/EnZona) son imágenes
+#: que pone el operador en `static/`, una por tarjeta; cada una se muestra solo
+#: si su archivo existe.
+DONATE_QR_DIR = Path(__file__).parent / "static"
+
+
+@dataclass(frozen=True)
+class DonateQr:
+    """Un QR de pago: cómo se llama la tarjeta y de dónde se sirve."""
+
+    label: str
+    src: str
+
+
+#: (rótulo, nombre del archivo en `static/`), en el orden en que se dibujan.
+_DONATE_QR_FILES: tuple[tuple[str, str], ...] = (
+    ("Tarjeta Clásica", "apoyar-qr-clasica.jpg"),
+    ("Tarjeta BPA", "apoyar-qr-bpa.png"),
+)
+
+
+def _donate_qrs() -> tuple[DonateQr, ...]:
+    return tuple(
+        DonateQr(label, f"/static/{name}")
+        for label, name in _DONATE_QR_FILES
+        if (DONATE_QR_DIR / name).is_file()
+    )
 
 
 @dataclass(frozen=True)
@@ -76,12 +109,23 @@ class SiteFooter:
     contact: FooterLinks
     year: int
     home_href: str = HOME_PATH
+    #: Enlace externo de donación ya validado, o `None`.
+    donate_url: str | None = None
+    #: Los QR cuyo archivo existe, o vacío.
+    donate_qrs: tuple[DonateQr, ...] = ()
 
     @property
     def has_contact(self) -> bool:
         """Si hay a dónde escribir. Decide a la vez la columna «Síguenos», el
         enlace «Contacto» y si `/contacto` responde."""
         return self.contact.any
+
+
+    @property
+    def has_donate(self) -> bool:
+        """Si hay cómo apoyar. Decide a la vez `/apoyar`, su enlace del pie y
+        el bloque de la landing."""
+        return self.donate_url is not None or bool(self.donate_qrs)
 
 
 def _page_links(column: str) -> tuple[FooterLink, ...]:
@@ -95,6 +139,10 @@ def build_site_footer(settings: Settings, *, year: int) -> SiteFooter:
     guani = _page_links("Guani")
     if contact.any:
         guani = (*guani, FooterLink("Contacto", CONTACT_PATH))
+    donate_url = http_url(settings.donate_url)
+    donate_qrs = _donate_qrs()
+    if donate_url is not None or donate_qrs:
+        guani = (*guani, FooterLink("Apoyar", DONATE_PATH))
     return SiteFooter(
         columns=(
             FooterColumn("Precios", _PRICE_LINKS),
@@ -103,4 +151,6 @@ def build_site_footer(settings: Settings, *, year: int) -> SiteFooter:
         ),
         contact=contact,
         year=year,
+        donate_url=donate_url,
+        donate_qrs=donate_qrs,
     )
