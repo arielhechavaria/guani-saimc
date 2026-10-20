@@ -540,9 +540,9 @@ class TestElTableroSigueSinEstePie:
 TROPIPAY = "https://www.tropipay.com/guani"
 
 
-@pytest.fixture
+@pytest.fixture(autouse=True)
 def sin_qr(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """El QR apunta a un archivo que no existe, sea cual sea el del repo."""
+    """Sin QR salvo que la prueba lo pida (`con_qr`), estén o no los del repo."""
     monkeypatch.setattr(site_pages, "DONATE_QR_DIR", tmp_path)
 
 
