@@ -41,6 +41,7 @@ PUBLIC_ROUTES: frozenset[tuple[str, str]] = frozenset(
         ("GET", "/preguntas"),
         ("GET", "/quienes-somos"),
         ("GET", "/contacto"),
+        ("GET", "/apoyar"),
         ("GET", "/terminos"),
         ("GET", "/privacidad"),
         ("GET", "/uso-de-datos"),

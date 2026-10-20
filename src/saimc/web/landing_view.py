@@ -181,7 +181,7 @@ class FooterLinks:
         return self.email is not None or bool(self.social)
 
 
-def _http_url(raw: str | None) -> str | None:
+def http_url(raw: str | None) -> str | None:
     """La URL recortada si es `http(s)://…`, o `None`.
 
     El valor viene del `.env` del operador, no de un visitante, pero termina en
@@ -215,7 +215,7 @@ def build_footer_links(settings: Settings) -> FooterLinks:
     social = tuple(
         FooterLink(label=label, href=href)
         for label, raw in candidates
-        if (href := _http_url(raw)) is not None
+        if (href := http_url(raw)) is not None
     )
     return FooterLinks(email=_email(settings.contact_email), social=social)
 

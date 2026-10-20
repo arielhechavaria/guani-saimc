@@ -1,0 +1,48 @@
+{#
+  `/apoyar`. Solo existe si hay cómo apoyar: el router responde 404 sin un
+  enlace de donación (`SAIMC_DONATE_URL`) ni el QR (`static/apoyar-qr.png`), y
+  con la misma condición el pie y la landing dejan de enlazarla
+  (`SiteFooter.has_donate`).
+
+  No muestra números de tarjeta ni cuentas de PayPal, y no guarda nada del
+  donante: el pago ocurre en TropiPay o en la app bancaria del visitante.
+#}
+{% extends "public_page.html" %}
+
+{% block title %}Apoyar a Guani{% endblock %}
+{% block og_description %}Guani es gratis y sin cuentas. Si te sirve, puedes aportar de forma voluntaria para sostener el servidor y el trabajo de curaduría.{% endblock %}
+{% block lead %}Guani es gratis y no pide cuentas. Si te sirve, puedes aportar de forma voluntaria.{% endblock %}
+
+{% block content %}
+<h2>A dónde va el dinero</h2>
+<p>A sostener el servidor y el trabajo de curaduría: revisar a mano los anuncios para que los precios sean confiables. Nada más.</p>
+
+<h2>Lo que debes saber</h2>
+<ul>
+  <li>Donar es voluntario. No da acceso a nada que los demás no tengan.</li>
+  <li>No influye en los precios ni en qué se publica.</li>
+  <li>Guani no tiene cuentas ni guarda datos de quien dona: el pago se hace fuera de este sitio.</li>
+</ul>
+
+{% if footer.donate_url %}
+<h2>Desde el exterior</h2>
+<p>Con tarjeta, a través de TropiPay.</p>
+<p class="pg-actions"><a class="pg-btn" href="{{ footer.donate_url }}" rel="noopener">Apoyar a Guani</a></p>
+{% endif %}
+{% if footer.donate_qr %}
+<h2>Desde Cuba</h2>
+<p>Escanea el código desde Transfermóvil o EnZona.</p>
+<img class="pg-qr" src="{{ footer.donate_qr }}" width="240" height="240" loading="lazy"
+     alt="Código QR para apoyar a Guani con un pago desde Transfermóvil o EnZona">
+{% endif %}
+{% endblock %}
+
+{% block next %}
+<nav class="pg-next" aria-label="Sigue leyendo">
+  <p class="pg-next-title">Sigue leyendo</p>
+  <ul class="pg-next-list">
+    <li><a href="/quienes-somos">Quiénes somos</a></li>
+    <li><a href="/privacidad">Política de privacidad</a></li>
+  </ul>
+</nav>
+{% endblock %}
