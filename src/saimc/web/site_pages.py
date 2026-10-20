@@ -15,14 +15,24 @@ explorar: ahí la ausencia de pie es una decisión registrada (2026-09-21).
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 from saimc.config import Settings
-from saimc.web.landing_view import FooterLink, FooterLinks, build_footer_links
+from saimc.web.landing_view import FooterLink, FooterLinks, build_footer_links, http_url
 from saimc.web.product_nav import HOME_PATH
 
 #: Ruta de la página de contacto. Existe solo con un correo o una red puestos.
 CONTACT_PATH = "/contacto"
 CONTACT_TEMPLATE = "public_page_contacto.html"
+
+#: Ruta de la página de apoyo. Existe solo con un enlace de donación
+#: (`SAIMC_DONATE_URL`) o con el QR puesto por el operador.
+DONATE_PATH = "/apoyar"
+DONATE_TEMPLATE = "public_page_apoyar.html"
+#: El QR para pagar desde cuentas cubanas (Transfermóvil/EnZona) es una imagen
+#: que pone el operador en `static/`; se muestra solo si el archivo existe.
+DONATE_QR_FILE = Path(__file__).parent / "static" / "apoyar-qr.png"
+DONATE_QR_SRC = "/static/apoyar-qr.png"
 
 
 @dataclass(frozen=True)
@@ -76,12 +86,23 @@ class SiteFooter:
     contact: FooterLinks
     year: int
     home_href: str = HOME_PATH
+    #: Enlace externo de donación ya validado, o `None`.
+    donate_url: str | None = None
+    #: Ruta pública del QR si el archivo existe, o `None`.
+    donate_qr: str | None = None
 
     @property
     def has_contact(self) -> bool:
         """Si hay a dónde escribir. Decide a la vez la columna «Síguenos», el
         enlace «Contacto» y si `/contacto` responde."""
         return self.contact.any
+
+
+    @property
+    def has_donate(self) -> bool:
+        """Si hay cómo apoyar. Decide a la vez `/apoyar`, su enlace del pie y
+        el bloque de la landing."""
+        return self.donate_url is not None or self.donate_qr is not None
 
 
 def _page_links(column: str) -> tuple[FooterLink, ...]:
@@ -95,6 +116,10 @@ def build_site_footer(settings: Settings, *, year: int) -> SiteFooter:
     guani = _page_links("Guani")
     if contact.any:
         guani = (*guani, FooterLink("Contacto", CONTACT_PATH))
+    donate_url = http_url(settings.donate_url)
+    donate_qr = DONATE_QR_SRC if DONATE_QR_FILE.is_file() else None
+    if donate_url is not None or donate_qr is not None:
+        guani = (*guani, FooterLink("Apoyar", DONATE_PATH))
     return SiteFooter(
         columns=(
             FooterColumn("Precios", _PRICE_LINKS),
@@ -103,4 +128,6 @@ def build_site_footer(settings: Settings, *, year: int) -> SiteFooter:
         ),
         contact=contact,
         year=year,
+        donate_url=donate_url,
+        donate_qr=donate_qr,
     )

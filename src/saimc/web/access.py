@@ -34,7 +34,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from starlette.middleware.base import RequestResponseEndpoint
 
 from saimc.config import Settings, get_settings
-from saimc.web.site_pages import CONTACT_PATH, SITE_PAGES
+from saimc.web.site_pages import CONTACT_PATH, DONATE_PATH, SITE_PAGES
 
 COOKIE = "saimc_acceso"
 LOGIN_PATH = "/acceso"
@@ -51,7 +51,9 @@ router = APIRouter()
 # un reinicio lo vacía, que es aceptable para frenar a quien adivina claves.
 _failures: dict[str, list[float]] = {}
 
-_PUBLIC_EXACT = frozenset({"/", "/precios", "/datos.csv", CONTACT_PATH, *(page.path for page in SITE_PAGES)})
+_PUBLIC_EXACT = frozenset(
+    {"/", "/precios", "/datos.csv", CONTACT_PATH, DONATE_PATH, *(page.path for page in SITE_PAGES)}
+)
 _PUBLIC_PREFIXES = ("/producto/", "/anuncio/")
 
 

@@ -41,7 +41,7 @@ from saimc.models import (
     SourceType,
 )
 from saimc.models.raw_ingestion import ProcessingStatus
-from saimc.web import landing_view
+from saimc.web import landing_view, site_pages
 from saimc.web.app import app
 from saimc.web.deps import get_db
 from saimc.web.landing_view import (
@@ -1700,3 +1700,45 @@ class TestLasAnimaciones:
 
         assert principal.count("<script") == 1
         assert "IntersectionObserver" in principal.split("<script>")[1]
+
+
+class TestBloqueDeIdeas:
+    """El bloque «¿Tienes una idea?» de la landing, antes del pie."""
+
+    @pytest.fixture(autouse=True)
+    def _sin_qr(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        monkeypatch.setattr(site_pages, "DONATE_QR_FILE", tmp_path / "no-existe.png")
+
+    def test_sin_configuracion_no_se_dibuja(self, client: TestClient) -> None:
+        html = client.get("/").text
+        assert 'id="ideas"' not in html
+        assert "¿Tienes una idea o una sugerencia?" not in html
+
+    def test_con_correo_solo_el_boton_de_idea(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(public, "get_settings", lambda: _settings(contact_email="hola@guani.example"))
+        html = client.get("/").text
+        assert "¿Tienes una idea o una sugerencia?" in html
+        assert 'class="lp-ideas-btn" href="/contacto">Cuéntanos una idea' in html
+        assert "Apoyar a Guani" not in html
+
+    def test_con_donacion_solo_el_boton_de_apoyo(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(public, "get_settings", lambda: _settings(donate_url="https://tropipay.example/g"))
+        html = client.get("/").text
+        assert 'href="/apoyar">Apoyar a Guani' in html
+        assert "Cuéntanos una idea" not in html
+
+    def test_con_las_dos_cosas_salen_los_dos_botones(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            public,
+            "get_settings",
+            lambda: _settings(contact_email="hola@guani.example", donate_url="https://tropipay.example/g"),
+        )
+        html = client.get("/").text
+        assert 'href="/contacto">Cuéntanos una idea' in html
+        assert 'href="/apoyar">Apoyar a Guani' in html
