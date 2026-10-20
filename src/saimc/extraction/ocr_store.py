@@ -74,6 +74,19 @@ def _redact(result: ocr.OcrResult) -> tuple[str, list[dict[str, Any]] | None]:
     return text, boxes
 
 
+def saved_transcription(db: Session, ingestion: RawIngestion) -> str | None:
+    """El texto del OCR ya guardado de la imagen (versión vigente), o `None`.
+
+    Nunca transcribe: es para quien decide si una imagen entra a algo sin
+    pagar OCR por preguntar (el foco del pre-cálculo, Jev, los comandos de los
+    carriles). El texto ya está redactado. Uno vacío cuenta como `None`.
+    """
+    row = _find(db, ingestion.id)
+    if row is None or not row.text.strip():
+        return None
+    return row.text
+
+
 def stored_transcription(
     db: Session,
     ingestion: RawIngestion,

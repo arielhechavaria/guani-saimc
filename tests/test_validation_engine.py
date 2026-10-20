@@ -1403,6 +1403,22 @@ def test_arbitro_solo_textos_jev_no_ve_imagenes() -> None:
     assert MOTIVO_PILOTO in resultado.reasons
 
 
+def test_arbitro_una_imagen_solo_con_jev_sobre_el_ocr() -> None:
+    # Slice OCR como texto: con `arbiter_images` Jev leyó la imagen por su OCR
+    # y arbitra igual que en un texto.
+    from saimc.validation import decide_lane_0
+
+    resultado = decide_lane_0(
+        _con_jev(_desacuerdo(tipo="image"), 0.05),
+        external_discard_below=UMBRAL_JEV,
+        arbiter_below=UMBRAL_ARBITRO,
+        arbiter_images=True,
+    )
+
+    assert resultado.lane == 0
+    assert any("Jev arbitra" in m for m in resultado.reasons)
+
+
 # --- lane1-sin-tope: el tope de filas configurable y quitado ------------------------
 # Casos T1 a T9 de `docs/spec-slice-lane1-sin-tope.md`, escritos antes del código.
 # La configuración es la del carril 1 de hoy (`CONFIG_CANAL_SUCIO`, los mismos

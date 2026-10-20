@@ -273,6 +273,12 @@ class Settings(BaseSettings):
     # se come el presupuesto del otro. En 0 no se llama (y se sigue anotando
     # lo ya guardado). Una llamada cuesta del orden de 0,00002 a 0,00007 USD.
     llm_jev_max_cost: float = _JEV_DEFAULTS["llm_jev_max_cost"]
+    # Jev sobre el texto del OCR de las imágenes (slice OCR como texto): la
+    # pasada también pregunta por las imágenes pendientes con transcripción
+    # guardada, y el carril 0 usa esa señal como segundo juez y árbitro de una
+    # imagen. Exige Jev activo (`validation.jev_signal.ocr_enabled`). Nace
+    # apagado: el umbral de Jev se calibró solo con textos.
+    jev_ocr_enabled: bool = False
 
     # Origen público del sitio, sin barra final (`https://guani.app`).
     # Lo usan `canonical`, `og:*` y el sitemap, que necesitan URL absolutas

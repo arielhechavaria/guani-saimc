@@ -64,6 +64,7 @@ from sqlalchemy.orm import Session
 
 from saimc.config import Settings, get_settings
 from saimc.db import get_session_factory
+from saimc.extraction import ocr_store
 from saimc.models import (
     ContentType,
     Currency,
@@ -128,6 +129,16 @@ def is_active(settings: Settings) -> bool:
     """
     api_key, _ = settings.gateway_api_key()
     return bool(settings.llm_jev_enabled and api_key)
+
+
+def ocr_enabled(settings: Settings) -> bool:
+    """¿Jev mira también el texto del OCR de las imágenes? (slice OCR como texto.)
+
+    `SAIMC_JEV_OCR_ENABLED` encendido Y Jev activo (`is_active`). Con esto la
+    pasada pregunta por las imágenes pendientes que ya tienen la transcripción
+    guardada, y el carril 0 usa esa señal también para una imagen.
+    """
+    return bool(settings.jev_ocr_enabled and is_active(settings))
 
 
 def warn_if_enabled_without_key(settings: Settings) -> None:
@@ -196,20 +207,38 @@ def load_options(session: Session) -> Options:
 # --- Selección y alta ---------------------------------------------------------
 
 
+def ad_text(session: Session, ingestion: RawIngestion) -> str:
+    """El texto que se le manda a Jev: el original de un texto o, de una
+    imagen, la transcripción del OCR ya guardada (redactada). Nunca transcribe:
+    no se paga OCR para preguntar. Vacío si no hay."""
+    if ingestion.content_type == ContentType.TEXT:
+        return ingestion.original_text or ""
+    return ocr_store.saved_transcription(session, ingestion) or ""
+
+
 def _select_texts(
-    session: Session, questions_hash: str, statuses: Sequence[ProcessingStatus], limit: int | None
+    session: Session,
+    questions_hash: str,
+    statuses: Sequence[ProcessingStatus],
+    limit: int | None,
+    *,
+    include_images: bool = False,
 ) -> list[RawIngestion]:
-    """Textos en alguno de esos estados sin señal de la huella vigente, más
-    viejo primero. Lo comparten la pasada del pre-cálculo y el relleno."""
+    """Anuncios en alguno de esos estados sin señal de la huella vigente, más
+    viejo primero. Lo comparten la pasada del pre-cálculo y el relleno.
+
+    Textos siempre; imágenes solo con `include_images`, y solo las que ya
+    tienen la transcripción del OCR guardada (`ad_text`)."""
     has_current = exists().where(
         JevSignal.ingestion_id == RawIngestion.id,
         JevSignal.questions_hash == questions_hash,
     )
+    types = [ContentType.TEXT] + ([ContentType.IMAGE] if include_images else [])
     stmt = (
         select(RawIngestion)
         .where(
             RawIngestion.processing_status.in_(statuses),
-            RawIngestion.content_type == ContentType.TEXT,
+            RawIngestion.content_type.in_(types),
             ~has_current,
         )
         .order_by(RawIngestion.captured_at.asc(), RawIngestion.id)
@@ -217,20 +246,31 @@ def _select_texts(
     # El texto vacío se filtra en Python, igual que el foco en el pre-cálculo:
     # así `limit` cuenta candidatos de verdad y no filas de la tabla.
     texts = [
-        ingestion for ingestion in session.execute(stmt).scalars() if (ingestion.original_text or "").strip()
+        ingestion
+        for ingestion in session.execute(stmt).scalars()
+        if ad_text(session, ingestion).strip()
     ]
     return texts if limit is None else texts[:limit]
 
 
-def select_pending(session: Session, questions_hash: str, limit: int | None = None) -> list[RawIngestion]:
-    """Textos pendientes sin señal de la huella vigente, más viejo primero.
+def select_pending(
+    session: Session,
+    questions_hash: str,
+    limit: int | None = None,
+    *,
+    include_images: bool = False,
+) -> list[RawIngestion]:
+    """Pendientes sin señal de la huella vigente, más viejo primero.
 
     No mira el foco: el triage se midió sobre todos los textos, en foco o no.
-    Las imágenes quedan afuera (su texto es el del OCR; eso es de C2). Un texto
-    con señal de una huella vieja SÍ entra: se le pregunta de nuevo y queda con
-    dos filas.
+    Las imágenes entran solo con `include_images` (`SAIMC_JEV_OCR_ENABLED`,
+    `ocr_enabled`) y solo con el OCR ya guardado: no se paga OCR para
+    preguntar. Un anuncio con señal de una huella vieja SÍ entra: se le
+    pregunta de nuevo y queda con dos filas.
     """
-    return _select_texts(session, questions_hash, (ProcessingStatus.PENDING,), limit)
+    return _select_texts(
+        session, questions_hash, (ProcessingStatus.PENDING,), limit, include_images=include_images
+    )
 
 
 def select_decided(session: Session, questions_hash: str, limit: int | None = None) -> list[RawIngestion]:
@@ -588,7 +628,7 @@ def run_pass(
     highest_cost = 0.0
     streak = 0
     for ingestion in candidates:
-        payload = jev_client.build_request(ingestion.original_text or "", questions)
+        payload = jev_client.build_request(ad_text(session, ingestion), questions)
         expected = max(jev_client.tokens_cost(jev_client.request_tokens(payload)), highest_cost)
         if result.cost_usd + expected > max_cost:
             result.stopped = STOP_MAX_COST
@@ -670,13 +710,16 @@ def prefill_pass(
     if not options.products:
         out("Jev: no hay productos piloto en el catálogo; no hay nada que preguntar.")
         return None
-    candidates = select_pending(session, options.questions_hash, limit)
+    candidates = select_pending(
+        session, options.questions_hash, limit, include_images=ocr_enabled(settings)
+    )
     max_cost = settings.llm_jev_max_cost
 
     if not execute:
         out(
-            f"Jev (señal en sombra): {_plural(len(candidates), 'texto', 'textos')} por preguntar, "
-            f"costo estimado {_estimated_cost(candidates, options):.6f} USD "
+            f"Jev (señal en sombra): {_plural(len(candidates), 'texto', 'textos')} por preguntar"
+            f"{_images_note(candidates)}, "
+            f"costo estimado {_estimated_cost(session, candidates, options):.6f} USD "
             f"(tope por corrida: {max_cost} USD)."
         )
         return None
@@ -688,11 +731,19 @@ def prefill_pass(
     return result
 
 
-def _estimated_cost(candidates: Sequence[RawIngestion], options: Options) -> float:
+def _images_note(candidates: Sequence[RawIngestion]) -> str:
+    """« (N por el OCR de una imagen)», o nada si no hay imágenes."""
+    images = sum(1 for c in candidates if c.content_type != ContentType.TEXT)
+    return f" ({images} por el OCR de una imagen)" if images else ""
+
+
+def _estimated_cost(
+    session: Session, candidates: Sequence[RawIngestion], options: Options
+) -> float:
     """Lo que costaría preguntarlos, estimado por caracteres. Sin red."""
     questions = options.questions
     tokens = sum(
-        jev_client.request_tokens(jev_client.build_request(c.original_text or "", questions))
+        jev_client.request_tokens(jev_client.build_request(ad_text(session, c), questions))
         for c in candidates
     )
     return jev_client.tokens_cost(tokens)
@@ -902,17 +953,21 @@ def run(
     if not options.products:
         out("Jev: no hay productos piloto en el catálogo; no hay nada que preguntar.")
         return 0
-    select_texts = select_decided if args.decided else select_pending
-    candidates = select_texts(session, options.questions_hash, args.limit)
+    if args.decided:
+        candidates = select_decided(session, options.questions_hash, args.limit)
+    else:
+        candidates = select_pending(
+            session, options.questions_hash, args.limit, include_images=ocr_enabled(settings)
+        )
     max_cost = settings.llm_jev_max_cost if args.max_cost is None else args.max_cost
     which = "ya decididos (curados o descartados)" if args.decided else "pendientes"
 
     if not args.execute:
-        estimated = _estimated_cost(candidates, options)
+        estimated = _estimated_cost(session, candidates, options)
         out("EN SECO: no se llama a Jev ni se escribe nada (con --execute se pregunta).")
         out(
             f"Jev (relleno, textos {which}): {_plural(len(candidates), 'texto', 'textos')} "
-            f"sin señal vigente por preguntar, costo estimado {estimated:.6f} USD "
+            f"sin señal vigente por preguntar{_images_note(candidates)}, costo estimado {estimated:.6f} USD "
             f"(tope de esta corrida: {max_cost} USD)."
         )
         if estimated > max_cost:

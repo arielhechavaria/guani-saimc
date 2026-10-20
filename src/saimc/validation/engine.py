@@ -473,6 +473,7 @@ def decide_lane_0(
     *,
     external_discard_below: float | None = None,
     arbiter_below: float | None = None,
+    arbiter_images: bool = False,
 ) -> AdValidation:
     """Decide SOLO el carril 0, sin configuración de parámetros (slice B2a).
 
@@ -498,7 +499,9 @@ def decide_lane_0(
     jev-desacuerdo, `docs/spec-slice-jev-desacuerdo.md`): si el modelo
     descarta por `off_focus` o `no_data` y lo ÚNICO que lo frena es el piloto
     en el texto, P(sí) MENOR que el umbral lo descarta igual. Solo textos (Jev
-    no ve imágenes); sin señal válida, sigue a la cola. Con `None`, lo de antes.
+    no ve imágenes), salvo con `arbiter_images`: Jev leyó la imagen por su OCR
+    (`SAIMC_JEV_OCR_ENABLED`, slice OCR como texto). Sin señal válida, sigue a
+    la cola. Con `None`, lo de antes.
     """
     model = ctx.model
     judged = external_discard_below is not None or arbiter_below is not None
@@ -518,7 +521,7 @@ def decide_lane_0(
         arbiter_below is not None
         and p is not None
         and p < arbiter_below
-        and ctx.content_type == ContentType.TEXT.value
+        and (arbiter_images or ctx.content_type == ContentType.TEXT.value)
         and reasons == [_PILOT_REASON]
     ):
         return AdValidation(
