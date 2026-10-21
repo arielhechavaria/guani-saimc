@@ -64,6 +64,7 @@ from saimc.extraction import llm_store, ocr_store
 from saimc.extraction.engine import ExtractionProposal
 from saimc.extraction.llm_checks import match_rule_rows
 from saimc.extraction.llm_propose_ad import AdProposal
+from saimc.ingestion import origin
 from saimc.models import (
     ContentType,
     CurationAction,
@@ -75,6 +76,7 @@ from saimc.models import (
     PriceHistory,
     ProcessingStatus,
     Product,
+    ProposalStatus,
     Provenance,
     Province,
     RawIngestion,
@@ -329,8 +331,9 @@ def apply_lane_1(
 ) -> bool:
     """Acepta el anuncio si el motor lo manda al carril 1. `True` si lo hizo.
 
-    Con `gate`, antes mira el freno de su tipo: si está puesto, o si alguna
-    fila cae en una celda divergente, el anuncio sigue pendiente.
+    Con `gate`, antes mira el freno de su tipo y, en una imagen, su tope de
+    arranque: si el freno está puesto, si se llegó al tope de la semana, o si
+    alguna fila cae en una celda divergente, el anuncio sigue pendiente.
 
     Una imagen entra solo con `images` (`image_enabled`, slice OCR como
     texto) y leída por `text`, el OCR ya redactado. Su evento lleva
@@ -349,7 +352,7 @@ def apply_lane_1(
     kind = str(ingestion.content_type)
     if kind != TEXT and not (images and kind == IMAGE):
         return False
-    if gate is not None and gate.brake_of(kind).on:
+    if gate is not None and (gate.brake_of(kind).on or gate.capped(kind)):
         return False
     ctx, validation = decide(session, ingestion, result, text=text, catalog=catalog)
     if validation.lane != LANE_ACCEPT:
@@ -539,6 +542,22 @@ def _pending_audit(
     return found if ingestion.processing_status == ProcessingStatus.CURATED else None
 
 
+def _review_pairs(
+    review: LlmReview | None, rows: Sequence[PriceHistory]
+) -> list[tuple[str, PriceHistory]]:
+    """`(índice en la propuesta, fila)` de las filas de hoy, según la revisión
+    que las guardó. Una fila que esa revisión no conoce va con índice vacío:
+    `review_rows` la cuenta como agregada a mano."""
+    index_of = {
+        entry.get("price_history_id"): entry.get("proposal_index")
+        for entry in (review.rows if review is not None else [])
+    }
+    return [
+        ("" if index_of.get(str(row.id)) is None else str(index_of[str(row.id)]), row)
+        for row in rows
+    ]
+
+
 def _record(
     session: Session,
     ingestion: RawIngestion,
@@ -579,19 +598,11 @@ def _record(
         .order_by(LlmReview.created_at)
         .limit(1)
     ).scalar_one_or_none()
-    index_of = {
-        entry.get("price_history_id"): entry.get("proposal_index")
-        for entry in (first.rows if first is not None else [])
-    }
-    pairs = [
-        ("" if index_of.get(str(row.id)) is None else str(index_of[str(row.id)]), row)
-        for row in rows
-    ]
     review = llm_store.save_review(
         session,
         proposal=proposal,
         outcome=outcome,
-        rows=llm_store.review_rows(proposal, pairs),
+        rows=llm_store.review_rows(proposal, _review_pairs(first, rows)),
         discard_reason=discard_reason,
     )
     review.created_at = now + timedelta(microseconds=1)
@@ -1024,18 +1035,35 @@ def diverging_cells(session: Session, settings: Settings) -> frozenset[tuple[str
     )
 
 
+def accepted_this_week(session: Session, content_type: str, today: date) -> int:
+    """Cuántos anuncios de un tipo aceptó solo el carril 1 en la semana ISO
+    (lunes a domingo) de `today`, auditados o no."""
+    week = _week_start(today)
+    return sum(
+        1
+        for _, event in _auto_events(session, content_type).values()
+        if _week_start(context.as_utc(event.decided_at).date()) == week
+    )
+
+
 class Gate:
     """El freno durante una corrida: se lee la base una vez y después se
     cuenta lo que la propia corrida acepta. Uno por tipo (slice OCR como
-    texto): el de imágenes sale solo de imágenes y el de textos, de textos."""
+    texto): el de imágenes sale solo de imágenes y el de textos, de textos.
 
-    def __init__(self, session: Session, settings: Settings) -> None:
+    Las imágenes tienen además un tope de arranque
+    (`SAIMC_LANE1_IMAGE_WEEKLY_CAP`, slice auditoría en sombra): con menos de
+    `AUDIT_N0` imágenes auditadas, como mucho ese número por semana ISO."""
+
+    def __init__(self, session: Session, settings: Settings, *, today: date | None = None) -> None:
         # Tipo -> [auditados, errores, sin auditar].
         self._counts: dict[str, list[int]] = {}
         for content_type in TYPES:
             state = audit_state(session, settings, content_type=content_type)
             self._counts[content_type] = [state.audited, state.errors, state.unaudited]
         self._diverging = diverging_cells(session, settings)
+        self._image_cap = settings.lane1_image_weekly_cap
+        self._image_week = accepted_this_week(session, IMAGE, today or utc_now().date())
 
     @property
     def brake(self) -> Brake:
@@ -1058,8 +1086,18 @@ class Gate:
             for row in model.rows
         )
 
+    def capped(self, content_type: str) -> bool:
+        """¿Llegó al tope de arranque de la semana? Solo las imágenes, solo
+        durante su arranque y solo con un tope distinto de 0."""
+        if content_type != IMAGE or not self._image_cap:
+            return False
+        starting = self._counts[IMAGE][0] < AUDIT_N0
+        return starting and self._image_week >= self._image_cap
+
     def count_accepted(self, content_type: str = TEXT) -> None:
         self._counts[content_type][2] += 1
+        if content_type == IMAGE:
+            self._image_week += 1
 
 
 # --- el tope de filas, medido (docs/spec-slice-tope-filas.md) -------------------
@@ -1227,9 +1265,12 @@ def left_out_reasons(
     result: AdProposal,
     *,
     catalog: context.Catalog,
-    gate: Gate,
+    gate: Gate | None,
 ) -> frozenset[str]:
     """Por qué el anuncio no entraría al carril 1. Vacío si entra.
+
+    Sin `gate` no se mira la celda divergente: la sombra hacia atrás decide
+    sin freno (slice auditoría en sombra).
 
     Son los mismos controles que `apply_lane_1` (salvo el freno y el
     interruptor de imágenes, que son del carril y no del anuncio, y la tasa,
@@ -1243,7 +1284,7 @@ def left_out_reasons(
     reasons: set[str] = set()
     if validation.lane != LANE_ACCEPT:
         reasons |= split_reasons(validation.reasons)
-    if gate.blocks(ctx):
+    if gate is not None and gate.blocks(ctx):
         reasons.add(CELL_REASON)
     if _published_date(ingestion, ctx.text) is None:
         reasons.add(DATE_REASON)
@@ -1284,6 +1325,201 @@ def _reason_lines(left_out: Sequence[frozenset[str]], total: int) -> list[str]:
     return lines
 
 
+# --- la sombra de las imágenes (docs/spec-slice-ocr-auditoria-sombra.md) -------
+
+
+@dataclass(frozen=True)
+class ShadowImage:
+    """Una imagen ya decidida por una persona, mirada con el carril 1 de hoy."""
+
+    ingestion: RawIngestion
+    #: Por qué el carril 1 no la habría aceptado. Vacía si la habría aceptado.
+    reasons: frozenset[str]
+    #: Si la habría aceptado: ¿la persona dejó otra cosa? `None` si no.
+    error: bool | None = None
+
+
+def _human_image_reviews(
+    session: Session,
+) -> list[tuple[RawIngestion, LlmProposal, LlmReview]]:
+    """El universo de la sombra hacia atrás, de la más vieja a la más nueva.
+
+    Imágenes que decidió una persona, de a una: curadas con filas `human`, o
+    descartadas (lo que en la auditoría sería «no válido»). Con el OCR guardado
+    y una propuesta `ok`: la de su última revisión, la que tenía a la vista.
+    Lo que aceptó o descartó un carril no entra.
+    """
+    stmt = (
+        select(LlmReview, LlmProposal, RawIngestion)
+        .join(LlmProposal, LlmProposal.id == LlmReview.proposal_id)
+        .join(RawIngestion, RawIngestion.id == LlmReview.ingestion_id)
+        .where(RawIngestion.content_type == IMAGE, LlmProposal.status == ProposalStatus.OK)
+        .order_by(LlmReview.created_at)
+    )
+    latest: dict[uuid.UUID, tuple[RawIngestion, LlmProposal, LlmReview]] = {}
+    for review, proposal, ingestion in session.execute(stmt):
+        latest[ingestion.id] = (ingestion, proposal, review)
+    accepted = _auto_events(session, IMAGE)
+    batch = context.batch_decisions(session, list(latest))
+    universe = []
+    for ingestion, proposal, review in latest.values():
+        if ingestion.id in accepted or not context.is_individual(review, batch):
+            continue
+        if ocr_store.saved_transcription(session, ingestion) is None:
+            continue
+        status = ingestion.processing_status
+        if status == ProcessingStatus.CURATED:
+            rows = _rows(session, ingestion.id)
+            if review.outcome != ReviewOutcome.CURATED or not rows:
+                continue
+            if any(row.provenance != Provenance.HUMAN.value for row in rows):
+                continue
+        elif status != ProcessingStatus.DISCARDED or review.outcome != ReviewOutcome.DISCARDED:
+            continue
+        universe.append((ingestion, proposal, review))
+    universe.sort(key=lambda item: (context.as_utc(item[0].captured_at), str(item[0].id)))
+    return universe
+
+
+def _gap_filled(entry: dict[str, Any]) -> dict[str, Any]:
+    """Un envase que la propuesta no traía y la persona puso es llenar un
+    hueco (el `format_id` vacío de `_fills_gap`): no cuenta como error."""
+    proposed, final = entry.get("proposed"), entry.get("final")
+    if (
+        isinstance(proposed, dict)
+        and isinstance(final, dict)
+        and "packaging" in proposed
+        and proposed["packaging"] is None
+        and final.get("packaging") is not None
+    ):
+        return {**entry, "proposed": {**proposed, "packaging": final["packaging"]}}
+    return entry
+
+
+def _shadow_error(
+    session: Session,
+    ingestion: RawIngestion,
+    proposal: LlmProposal,
+    review: LlmReview,
+    published: date,
+) -> bool:
+    """¿La persona dejó algo distinto de lo que el carril 1 habría guardado?
+
+    El criterio de la auditoría del carril 1: descartarla es «no válido»; tocar
+    una fila (campos de la propuesta, variante o fecha), borrarla o agregar
+    una es «corregido». Llenar la compra mínima o un envase vacío no.
+    """
+    if ingestion.processing_status == ProcessingStatus.DISCARDED:
+        return True
+    rows = _rows(session, ingestion.id)
+    entries = [
+        _gap_filled(entry)
+        for entry in llm_store.review_rows(proposal, _review_pairs(review, rows))
+    ]
+    province = origin.channel_province(session, ingestion)
+    diff = context.diff_review(
+        entries, channel_province_id=None if province is None else str(province.id)
+    )
+    return diff.has_error or any(
+        row.variant_id is not None or row.published_date != published for row in rows
+    )
+
+
+def shadow_images(session: Session, catalog: context.Catalog) -> list[ShadowImage]:
+    """La sombra hacia atrás: cada imagen del universo, decidida con la misma
+    `decide` del carril 1, sobre su OCR redactado, sin freno y sin escribir."""
+    cases = []
+    for ingestion, proposal, review in _human_image_reviews(session):
+        result = context.stored_proposal(session, proposal, catalog)
+        reasons = left_out_reasons(session, ingestion, result, catalog=catalog, gate=None)
+        error = None
+        if not reasons:
+            published = _published_date(ingestion, text_of(session, ingestion) or "")
+            assert published is not None  # noqa: S101 — sin fecha habría un motivo
+            error = _shadow_error(session, ingestion, proposal, review, published)
+        cases.append(ShadowImage(ingestion, reasons, error))
+    return cases
+
+
+def _proposal_summary(result: AdProposal) -> str:
+    parts = []
+    for row in result.rows:
+        name = row.product.name if row.product is not None else "?"
+        price = "?" if row.price is None else f"{row.price.normalize():f} {row.currency}"
+        quantity = (
+            "" if row.quantity is None else f" · {row.quantity.normalize():f} {row.unit or ''}"
+        )
+        parts.append(f"{name} · {price}{quantity}".rstrip())
+    return "; ".join(parts) or "(sin filas)"
+
+
+def _sombra_imagenes(
+    session: Session, settings: Settings, n: int, out: Callable[[str], None]
+) -> int:
+    """Solo lectura: el error del carril 1 sobre imágenes ya curadas (A) y las
+    pendientes que aceptaría hoy, para curarlas primero (B)."""
+    catalog = context.load_catalog(session)
+    out("SOMBRA DE LAS IMÁGENES (carril 1): solo lectura, no se escribe nada.")
+
+    cases = shadow_images(session, catalog)
+    accepted = [case for case in cases if case.error is not None]
+    errors = sum(1 for case in accepted if case.error)
+    discarded = sum(
+        1 for case in cases if case.ingestion.processing_status == ProcessingStatus.DISCARDED
+    )
+    upper = AuditState(audited=len(accepted), errors=errors, unaudited=0).upper
+    rate = "-" if not accepted else _percent(errors / len(accepted))
+    out(
+        "A. Hacia atrás: imágenes ya decididas por una persona, con propuesta del "
+        "modelo y OCR guardado."
+    )
+    out(
+        f"  Universo: {len(cases)} imágenes ({len(cases) - discarded} curadas, "
+        f"{discarded} descartadas)."
+    )
+    out(
+        f"  El carril 1 (reglas de hoy, sin freno) habría aceptado n = {len(accepted)}: "
+        f"aciertos {len(accepted) - errors}, errores {errors} ({rate}), cota superior "
+        f"{'-' if upper is None else _percent(upper)} (meta {_percent(ERROR_TARGET)})."
+    )
+    discarded_errors = sum(
+        1 for case in accepted if case.ingestion.processing_status == ProcessingStatus.DISCARDED
+    )
+    if discarded_errors:
+        out(
+            f"  De los errores, {discarded_errors} son imágenes que la persona descartó: "
+            "cuentan como «no válido»."
+        )
+    for line in _reason_lines([case.reasons for case in cases], len(cases)):
+        out(f"  {line}")
+    out(
+        "  Aviso: la persona vio la propuesta antes de curar (anclaje). El error real "
+        "es igual o mayor: esto es un piso, no la cifra final."
+    )
+
+    gate = Gate(session, settings)
+    pairs = pending_with_proposal(session, types=(IMAGE,))
+    ready = []
+    for ingestion, proposal in pairs:
+        result = context.stored_proposal(session, proposal, catalog)
+        if not left_out_reasons(session, ingestion, result, catalog=catalog, gate=gate):
+            ready.append((ingestion, result))
+    out(
+        f"B. Hacia adelante: {len(ready)} de {len(pairs)} imágenes pendientes con propuesta "
+        "entrarían hoy al carril 1. Curalas primero en la cola: su curaduría alimenta A "
+        f"en la corrida siguiente. Las primeras {min(n, len(ready))}:"
+    )
+    for ingestion, result in ready[:n]:
+        out(
+            f"  {str(ingestion.id)[:8]}  {ingestion.source_reference or '(sin canal)'}  "
+            f"{_proposal_summary(result)}"
+        )
+    # Nada de lo de arriba escribe; si algo quedara pendiente en la sesión, no
+    # se guarda.
+    session.rollback()
+    return 0
+
+
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="python -m saimc.validation.lane1",
@@ -1307,7 +1543,21 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "por un motivo que contenga TEXTO (p. ej. «las reglas ven un producto»)."
         ),
     )
-    parser.add_argument("--n", type=int, default=10, help="Tamaño de la muestra (--muestra).")
+    parser.add_argument(
+        "--n",
+        type=int,
+        default=10,
+        help="Tamaño de la muestra (--muestra) o de la lista B (--sombra-imagenes).",
+    )
+    parser.add_argument(
+        "--sombra-imagenes",
+        action="store_true",
+        help=(
+            "Solo lectura: el error que el carril 1 habría tenido sobre las imágenes ya "
+            "curadas por una persona, y las pendientes que aceptaría hoy "
+            "(docs/spec-slice-ocr-auditoria-sombra.md)."
+        ),
+    )
     parser.add_argument(
         "--por-filas",
         action="store_true",
@@ -1357,6 +1607,11 @@ def run(
     out: Callable[[str], None] = print,
 ) -> int:
     """Corre el modo pedido. Devuelve el código de salida."""
+    if getattr(args, "sombra_imagenes", False):
+        if args.execute:
+            out("--sombra-imagenes es de solo lectura: no se combina con --execute.")
+            return 2
+        return _sombra_imagenes(session, settings, getattr(args, "n", 10), out)
     if args.execute and not enabled(settings):
         out(
             "El carril 1 está apagado: no se acepta nada. Para encenderlo, "

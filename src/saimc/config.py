@@ -214,6 +214,12 @@ class Settings(BaseSettings):
     # leyendo el texto de su OCR. Tiene freno, auditoría y cota propios, aparte
     # de los del texto. Nace apagado; solo, sin `lane1_enabled`, no hace nada.
     lane1_image_enabled: bool = False
+    # Tope de arranque de las imágenes del carril 1
+    # (`docs/spec-slice-ocr-auditoria-sombra.md` §2): mientras haya menos de 60
+    # imágenes auditadas, cuántas acepta como máximo por semana ISO. Superado
+    # el arranque no rige. 0 = sin tope; un negativo no arranca. No toca los
+    # textos, y si `lane1_max_rows` también limita, rigen los dos.
+    lane1_image_weekly_cap: int = Field(default=20, ge=0)
     # Tope de filas por anuncio del carril 1 (`validation.lane1.build_config`).
     # 0 = sin tope, el valor por defecto desde el 2026-10-19 (listas largas de
     # los almacenes, `docs/spec-slice-lane1-sin-tope.md`). Un N positivo

@@ -300,7 +300,15 @@ def _aceptados_y_auditados(
     """60 anuncios de `tipo` aceptados solos y auditados: `errores` no válidos y
     el resto «está bien»."""
     ingestas = [_anuncio(session, canal, tipo=tipo, minutos=i) for i in range(60)]
-    _precalcular(session, tmp_path, lane1_enabled=True, lane1_image_enabled=True)
+    # Sin el tope de arranque de las imágenes (slice auditoría en sombra): esto
+    # arma el estado «60 aceptadas», no prueba el tope.
+    _precalcular(
+        session,
+        tmp_path,
+        lane1_enabled=True,
+        lane1_image_enabled=True,
+        lane1_image_weekly_cap=0,
+    )
     for ingesta in ingestas:
         assert _estado(session, ingesta) == ProcessingStatus.CURATED
     for ingesta in ingestas[:errores]:

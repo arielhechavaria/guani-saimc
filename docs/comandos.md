@@ -33,6 +33,7 @@ pero que no se probó al armar este catálogo. Si falla, el catálogo es el que 
 | [Visitantes únicos del sitio](#visitantes-únicos-del-sitio) | Cuántas personas distintas abrieron el sitio público un día | no | no |
 | [`saimc.validation.lane0`](#carril-0-sobre-lo-pendiente) | Aplica el carril 0 a los pendientes que ya tienen propuesta | en seco no; `--execute` descarta | no |
 | [`saimc.validation.lane1`](#carril-1-en-seco) | Qué pendientes (textos e imágenes por su OCR) aceptaría solo el carril 1 | en seco no; `--execute` crea filas ([ver](#carril-1-escribiendo)) | no |
+| [`saimc.validation.lane1 --sombra-imagenes`](#auditoría-en-sombra-de-las-imágenes) | Cuánto se habría equivocado el carril 1 con las imágenes ya curadas, y qué pendientes aceptaría hoy | no | no |
 | [`saimc.validation.revalidate`](#revalidar-en-seco) | Cuántas filas cambiarían de estado | no (en seco) | no |
 | [`saimc.extraction.prefill` en seco](#pre-cálculo-en-seco) | Estimar el costo del pre-cálculo | no | no |
 | [`saimc.llm.provider`](#proveedor-del-asistente) | Ver por dónde llama el asistente (Anthropic o Vercel) y con qué modelo | no | no |
@@ -627,6 +628,7 @@ pre-cálculo lee el `.env` en cada corrida).
 
   ```
   .venv/bin/python -m saimc.validation.lane1                   # «imágenes N de M» y por qué se quedan afuera
+  .venv/bin/python -m saimc.validation.lane1 --sombra-imagenes # error sobre lo ya curado (ver abajo)
   .venv/bin/python -m saimc.validation.lane0                   # con SAIMC_LANE0_IMAGE_ENABLED=true en el entorno
   .venv/bin/python -m saimc.validation.jev_signal              # con SAIMC_JEV_OCR_ENABLED=true: «(N por el OCR de una imagen)»
   .venv/bin/python -m saimc.extraction.prefill                 # cuántos pendientes por tipo y el costo
@@ -647,6 +649,39 @@ pre-cálculo lee el `.env` en cada corrida).
   auditoría.
 - **Cambia algo**: solo con los interruptores encendidos. **Gasta**: Jev sobre imágenes sale del mismo
   tope `SAIMC_LLM_JEV_MAX_COST`; el carril 1 no gasta.
+- **Tope de arranque de las imágenes** (`SAIMC_LANE1_IMAGE_WEEKLY_CAP`, por defecto 20): mientras
+  haya menos de 60 imágenes auditadas, el carril 1 acepta como mucho ese número de imágenes por
+  semana ISO (lunes a domingo, UTC), contando las ya aceptadas esa semana. Superado el arranque no
+  rige. `0` = sin tope; un negativo no arranca. No toca los textos. Si `SAIMC_LANE1_MAX_ROWS`
+  también limita, rigen los dos: el que corte primero. Lo que el tope deja afuera sigue pendiente
+  en la cola. Cambiarlo pide reiniciar, como cualquier variable del `.env`.
+
+### Auditoría en sombra de las imágenes
+
+Antes de encender `SAIMC_LANE1_IMAGE_ENABLED`: cuánto se habría equivocado el carril 1 con las
+imágenes que ya curó una persona, y qué imágenes pendientes aceptaría hoy
+([spec-slice-ocr-auditoria-sombra.md](spec-slice-ocr-auditoria-sombra.md)).
+
+```
+.venv/bin/python -m saimc.validation.lane1 --sombra-imagenes --n 10
+```
+
+- **Cambia algo**: no (ni filas, ni eventos, ni revisiones, ni el orden de la cola). **Gasta**: no
+  (propuestas y OCR ya guardados). Anda igual con los interruptores apagados. No se combina con
+  `--execute` (sale con código 2).
+- **A. Hacia atrás.** El universo son las imágenes que decidió una persona, de a una, con OCR
+  guardado y propuesta del modelo: curadas con filas `human`, o descartadas. Cada una pasa por la
+  misma `decide` del carril 1, con las reglas de hoy y sin freno. De las que habría aceptado, compara
+  la propuesta con lo que dejó la persona, con el criterio de la auditoría: tocar un campo de una
+  fila, la variante o la fecha, borrar o agregar una fila, o descartarla, es un error; llenar la
+  compra mínima o un envase vacío no. Imprime `n`, aciertos, errores con su porcentaje y la cota
+  superior (la misma del freno), y los motivos de las que quedan afuera, con la tabla del en seco.
+- **Es un piso.** La persona vio la propuesta antes de curar (anclaje): el error real es igual o
+  mayor.
+- **B. Hacia adelante.** Las imágenes pendientes que el carril 1 aceptaría hoy (con la celda
+  divergente mirada, como el en seco), las primeras `--n` (por defecto 10), de la más vieja a la más
+  nueva: id corto, canal y resumen de la propuesta. Para curarlas primero en la cola: en la
+  corrida siguiente esa curaduría ya cuenta en A.
 
 ### Revalidar en seco
 
