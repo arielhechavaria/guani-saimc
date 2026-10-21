@@ -1742,3 +1742,21 @@ class TestBloqueDeIdeas:
         html = client.get("/").text
         assert 'href="/contacto">Cuéntanos una idea' in html
         assert 'href="/apoyar">Apoyar a Guani' in html
+
+
+class TestTarjetaDeApoyo:
+    """La donación se dibuja como tarjeta con corazón; sin donación no hay tarjeta."""
+
+    @pytest.fixture(autouse=True)
+    def _sin_qr(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        monkeypatch.setattr(site_pages, "DONATE_QR_DIR", tmp_path)
+
+    def test_con_donacion_sale_la_tarjeta(self, client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(public, "get_settings", lambda: _settings(donate_url="https://tropipay.example/g"))
+        html = client.get("/").text
+        assert 'class="lp-apoyo"' in html
+        assert "lp-apoyo-corazon" in html
+
+    def test_sin_donacion_no_hay_tarjeta(self, client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(public, "get_settings", lambda: _settings(contact_email="hola@guani.example"))
+        assert 'class="lp-apoyo"' not in client.get("/").text

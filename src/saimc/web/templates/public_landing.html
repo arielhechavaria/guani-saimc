@@ -249,6 +249,17 @@
   .lp-ideas-btn-alt { background: transparent; color: var(--ph-accent); }
   .lp-ideas-btn-alt:hover { color: var(--ph-accent); }
   @media (min-width: 720px) { .lp-ideas-actions { flex-direction: row; justify-content: center; } }
+  /* Tarjeta de apoyo: halo suave tras el corazón, que late despacio. */
+  .lp-apoyo { margin: 22px auto 0; max-width: 34em; padding: 26px 20px 24px; border-radius: var(--ph-radius-lg);
+              background: radial-gradient(circle at 50% 0, var(--ph-accent-wash), transparent 70%), var(--lp-surface);
+              box-shadow: var(--ph-elev); display: flex; flex-direction: column; align-items: center; gap: 14px; }
+  .lp-apoyo-corazon { display: flex; align-items: center; justify-content: center; width: 72px; height: 72px; border-radius: 50%;
+                      background: var(--ph-accent-wash); color: var(--ph-dusk-mamey); animation: lp-latido 2.4s ease-in-out infinite; }
+  .lp-apoyo-lema { margin: 0; font: 400 22px/1.25 var(--lp-heading); }
+  .lp-apoyo-btn { align-self: stretch; }
+  .lp-apoyo + .lp-ideas-actions { margin-top: 14px; }
+  @media (min-width: 720px) { .lp-apoyo-btn { align-self: center; } }
+  @keyframes lp-latido { 0%, 100% { transform: scale(1); } 14% { transform: scale(1.1); } 28% { transform: scale(1); } 42% { transform: scale(1.07); } 56% { transform: scale(1); } }
   .lp-faq-link { margin-top: 6px; display: inline-flex; align-items: center; gap: 6px; min-height: 44px;
                  font-size: 16px; font-weight: 500; color: var(--lp-blue); text-decoration: underline; }
   .lp-faq-link:hover { color: var(--lp-blue); text-decoration: underline; }
@@ -707,10 +718,21 @@
 <section class="lp-wrap lp-section lp-ideas" id="ideas" aria-labelledby="lp-ideas-title">
   <h2 class="lp-h2" id="lp-ideas-title">¿Tienes una idea o una sugerencia?</h2>
   <p class="lp-ideas-text">Guani se mejora con lo que cuentan quienes lo usan.{% if footer.has_donate %} Y si te sirve, puedes apoyarlo.{% endif %}</p>
-  <div class="lp-ideas-actions">
-    {% if footer.has_contact %}<a class="lp-ideas-btn" href="/contacto">Cuéntanos una idea</a>{% endif %}
-    {% if footer.has_donate %}<a class="lp-ideas-btn{% if footer.has_contact %} lp-ideas-btn-alt{% endif %}" href="/apoyar">Apoyar a Guani</a>{% endif %}
+  {% if footer.has_donate %}
+  {# Tarjeta de apoyo: corazón que late (solo CSS) y el botón principal. #}
+  <div class="lp-apoyo">
+    <span class="lp-apoyo-corazon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" width="40" height="40"><path fill="currentColor" d="M12 21.2l-1.45-1.32C5.4 15.2 2 12.1 2 8.3 2 5.2 4.4 2.8 7.5 2.8c1.74 0 3.41.81 4.5 2.09 1.09-1.28 2.76-2.09 4.5-2.09 3.1 0 5.5 2.4 5.5 5.5 0 3.8-3.4 6.9-8.55 11.58L12 21.2z"/></svg>
+    </span>
+    <p class="lp-apoyo-lema">Guani es independiente y gratuito. Cada aporte lo mantiene abierto.</p>
+    <a class="lp-ideas-btn lp-apoyo-btn" href="/apoyar">Apoyar a Guani</a>
   </div>
+  {% endif %}
+  {% if footer.has_contact %}
+  <div class="lp-ideas-actions">
+    <a class="lp-ideas-btn{% if footer.has_donate %} lp-ideas-btn-alt{% endif %}" href="/contacto">Cuéntanos una idea</a>
+  </div>
+  {% endif %}
 </section>
 {% endif %}
 
