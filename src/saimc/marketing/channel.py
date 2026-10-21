@@ -5,7 +5,7 @@
     python -m saimc.marketing.channel --slot educativo --day 2026-10-20
 
 `docs/decisions.md`, 2026-10-20. Dos temporizadores de systemd lo corren por
-turno, hora de La Habana: 06:00 los «datos» y 10:00 el «educativo»
+turno, hora de La Habana: 08:00 los «datos» y 10:00 el «educativo»
 (`systemd/saimc-canal-datos.timer`, `systemd/saimc-canal-educativo.timer`).
 
 **Solo manda lo que el operador ya aprobó** (`approved`, o `published` si ya

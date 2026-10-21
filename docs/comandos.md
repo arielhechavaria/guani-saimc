@@ -28,7 +28,7 @@ pero que no se probó al armar este catálogo. Si falla, el catálogo es el que 
 | [`saimc.queue_expiry`](#tope-de-edad-de-la-cola) | Vence los pendientes de más de N días (apagado por defecto) | en seco no; `--execute` descarta (motivo `off_focus`, evento auto) | no |
 | [`saimc.alerting`](#avisos-al-celular-telegram) | Avisos al celular por Telegram cuando algo requiere al operador | en seco no; `--execute` manda y guarda `data/alerts-state.json` | no |
 | [`saimc.marketing.daily`](#tarjetas-de-marketing-del-dia) | Crear los borradores de marketing del día en «Hoy» (`/marketing`) (lo hace solo el temporizador a las 05:00 de La Habana); no publica ni rasteriza | en seco no; `--execute` crea los borradores y borra los vencidos (borradores y descartadas de más de 30 días) | no |
-| [`saimc.marketing.channel`](#publicar-en-el-canal-de-whatsapp) | Mandar al canal de WhatsApp de Guani lo aprobado del día (lo hacen solos los temporizadores: datos 06:00, educativo 10:00) | en seco no; `--execute` manda por WAHA y anota lo enviado en `marketing_posts` | no |
+| [`saimc.marketing.channel`](#publicar-en-el-canal-de-whatsapp) | Mandar al canal de WhatsApp de Guani lo aprobado del día (lo hacen solos los temporizadores: datos 08:00, educativo 10:00) | en seco no; `--execute` manda por WAHA y anota lo enviado en `marketing_posts` | no |
 | [`saimc.instagram.sync`](#seguimiento-de-instagram) | Leer la cuenta de Instagram de Guani y guardar sus métricas (lo hace solo el temporizador cada 3 h) | en seco no; `--execute` escribe las tablas `instagram_*` y renueva el token si toca | no |
 | [Visitantes únicos del sitio](#visitantes-únicos-del-sitio) | Cuántas personas distintas abrieron el sitio público un día | no | no |
 | [`saimc.validation.lane0`](#carril-0-sobre-lo-pendiente) | Aplica el carril 0 a los pendientes que ya tienen propuesta | en seco no; `--execute` descarta | no |
@@ -436,7 +436,7 @@ Manda al canal de WhatsApp de Guani la publicación **ya aprobada** del lote de 
 `datos` o `educativo`. Una lámina por mensaje (el JPEG que hizo Aprobar) y el texto del post, sin
 los hashtags de Instagram, en la primera. Sale por una **segunda sesión de WAHA**, con un número
 aparte del de la ingesta (`docs/decisions.md`, 2026-10-20). Normalmente lo corren solos
-`saimc-canal-datos.timer` (06:00 de La Habana) y `saimc-canal-educativo.timer` (10:00); esto es
+`saimc-canal-datos.timer` (08:00 de La Habana) y `saimc-canal-educativo.timer` (10:00); esto es
 para probarlo o reenviar.
 
 ```
@@ -478,7 +478,7 @@ para probarlo o reenviar.
 - **Instalar los temporizadores (una vez):**
   `sudo cp systemd/saimc-canal@.service systemd/saimc-canal-datos.timer systemd/saimc-canal-educativo.timer /etc/systemd/system/ &&
   sudo systemctl daemon-reload && sudo systemctl enable --now saimc-canal-datos.timer saimc-canal-educativo.timer`.
-  Verificar: `systemctl list-timers 'saimc-canal*'` debe mostrar las 06:00 y las 10:00 de Cuba.
+  Verificar: `systemctl list-timers 'saimc-canal*'` debe mostrar las 08:00 y las 10:00 de Cuba.
   Correr uno ya: `sudo systemctl start saimc-canal@datos.service`.
 
 ### Seguimiento de Instagram
@@ -1004,7 +1004,7 @@ Hay tres unidades: `saimc.service` (la aplicación, **sin archivo en `systemd/`*
 También están ahí `saimc-alerts` (avisos, cada 15 min) y `saimc-instagram` (cuenta de Instagram,
 cada 3 h a y media; instalación en [Seguimiento de Instagram](#seguimiento-de-instagram)),
 `saimc-marketing` (borradores del día, 05:00) y `saimc-canal@` con `saimc-canal-datos` y
-`saimc-canal-educativo` (envío al canal de WhatsApp, 06:00 y 10:00; instalación en
+`saimc-canal-educativo` (envío al canal de WhatsApp, 08:00 y 10:00; instalación en
 [Publicar en el canal de WhatsApp](#publicar-en-el-canal-de-whatsapp)). Sus
 comandos son los mismos de abajo cambiando el nombre de la unidad, p. ej.
 `journalctl -u saimc-instagram.service -n 50`.

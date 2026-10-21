@@ -167,7 +167,7 @@ def test_canal_usa_el_mismo_usuario_y_directorio_que_el_backup() -> None:
 
 @pytest.mark.parametrize(
     ("turno", "hora"),
-    [("datos", "06:00"), ("educativo", "10:00")],
+    [("datos", "08:00"), ("educativo", "10:00")],
 )
 def test_cada_turno_del_canal_sale_a_su_hora_de_la_habana(turno: str, hora: str) -> None:
     temporizador = _leer(f"saimc-canal-{turno}.timer")
