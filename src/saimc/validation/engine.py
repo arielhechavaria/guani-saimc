@@ -391,12 +391,21 @@ def _well_formed(signal: ExternalSignal, n_rows: int) -> bool:
     )
 
 
-def validate_ad(ctx: AdContext, config: ValidationConfig | None) -> AdValidation:
+def validate_ad(
+    ctx: AdContext, config: ValidationConfig | None, *, lane1_images: bool = False
+) -> AdValidation:
     """Valida un anuncio y decide su carril. Es el único lugar que lo decide.
 
     `config` es obligatorio y no tiene valor por defecto: pasar `None` es decir
     «no hay configuración», y entonces todo anuncio va al carril 2 (las filas
     igual se evalúan, con las reglas que dependen de un parámetro en `unknown`).
+
+    `lane1_images` admite una imagen en el carril 1, leída por el texto de su
+    OCR (slice OCR como texto, `docs/spec-slice-ocr-como-texto.md`). Apagado,
+    como siempre: toda imagen va a la cola. Lo prende solo el carril 1, que
+    tiene para las imágenes su interruptor, su freno y su auditoría propios.
+    No es un parámetro de `ValidationConfig` a propósito: no se calibra, y así
+    el informe de sombra sigue registrando los mismos parámetros.
     """
     model = ctx.model
     if model is None:
@@ -426,7 +435,7 @@ def validate_ad(ctx: AdContext, config: ValidationConfig | None) -> AdValidation
     reasons: list[str] = []
     if config is None:
         reasons.append("no hay configuración de parámetros: no se automatiza")
-    if ctx.content_type != ContentType.TEXT.value:
+    if ctx.content_type != ContentType.TEXT.value and not lane1_images:
         reasons.append("el anuncio es una imagen: las imágenes no entran al carril 1")
     if model.dropped:
         reasons.append("la propuesta del modelo tiene filas o campos caídos")
@@ -473,6 +482,7 @@ def decide_lane_0(
     *,
     external_discard_below: float | None = None,
     arbiter_below: float | None = None,
+    arbiter_images: bool = False,
 ) -> AdValidation:
     """Decide SOLO el carril 0, sin configuración de parámetros (slice B2a).
 
@@ -498,7 +508,9 @@ def decide_lane_0(
     jev-desacuerdo, `docs/spec-slice-jev-desacuerdo.md`): si el modelo
     descarta por `off_focus` o `no_data` y lo ÚNICO que lo frena es el piloto
     en el texto, P(sí) MENOR que el umbral lo descarta igual. Solo textos (Jev
-    no ve imágenes); sin señal válida, sigue a la cola. Con `None`, lo de antes.
+    no ve imágenes), salvo con `arbiter_images`: Jev leyó la imagen por su OCR
+    (`SAIMC_JEV_OCR_ENABLED`, slice OCR como texto). Sin señal válida, sigue a
+    la cola. Con `None`, lo de antes.
     """
     model = ctx.model
     judged = external_discard_below is not None or arbiter_below is not None
@@ -518,7 +530,7 @@ def decide_lane_0(
         arbiter_below is not None
         and p is not None
         and p < arbiter_below
-        and ctx.content_type == ContentType.TEXT.value
+        and (arbiter_images or ctx.content_type == ContentType.TEXT.value)
         and reasons == [_PILOT_REASON]
     ):
         return AdValidation(

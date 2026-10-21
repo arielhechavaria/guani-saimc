@@ -32,7 +32,7 @@ pero que no se probó al armar este catálogo. Si falla, el catálogo es el que 
 | [`saimc.instagram.sync`](#seguimiento-de-instagram) | Leer la cuenta de Instagram de Guani y guardar sus métricas (lo hace solo el temporizador cada 3 h) | en seco no; `--execute` escribe las tablas `instagram_*` y renueva el token si toca | no |
 | [Visitantes únicos del sitio](#visitantes-únicos-del-sitio) | Cuántas personas distintas abrieron el sitio público un día | no | no |
 | [`saimc.validation.lane0`](#carril-0-sobre-lo-pendiente) | Aplica el carril 0 a los pendientes que ya tienen propuesta | en seco no; `--execute` descarta | no |
-| [`saimc.validation.lane1`](#carril-1-en-seco) | Qué textos pendientes aceptaría solo el carril 1 | en seco no; `--execute` crea filas ([ver](#carril-1-escribiendo)) | no |
+| [`saimc.validation.lane1`](#carril-1-en-seco) | Qué pendientes (textos e imágenes por su OCR) aceptaría solo el carril 1 | en seco no; `--execute` crea filas ([ver](#carril-1-escribiendo)) | no |
 | [`saimc.validation.revalidate`](#revalidar-en-seco) | Cuántas filas cambiarían de estado | no (en seco) | no |
 | [`saimc.extraction.prefill` en seco](#pre-cálculo-en-seco) | Estimar el costo del pre-cálculo | no | no |
 | [`saimc.llm.provider`](#proveedor-del-asistente) | Ver por dónde llama el asistente (Anthropic o Vercel) y con qué modelo | no | no |
@@ -158,6 +158,8 @@ sudo systemctl start saimc-prefill.service
   `SAIMC_LANE0_JEV_ARBITER_ENABLED=true`, un texto que el modelo descarta pero en el que las reglas
   ven un producto piloto se descarta igual si Jev da P(sí) < 0,2. Nace apagado; cómo encenderlo, en
   [Carril 0 sobre lo pendiente](#carril-0-sobre-lo-pendiente).
+- **Imágenes por su OCR**: una imagen con el OCR ya guardado se trata como un texto más; tres
+  interruptores, todos apagados. Ver [Imágenes por su OCR](#imágenes-por-su-ocr).
 - Más: [runbook de la rutina diaria](runbook-rutina-diaria.md), «Paso 1».
 
 ---
@@ -598,6 +600,53 @@ decisiones y más de la mitad de las filas tocadas, celda de 5).
 - En seco no se resuelve la tasa de cambio: una fila en divisa sin tasa no entra al aceptar.
 - Un anuncio capturado entre las 00:00 y las 04:00 UTC no entra: su fecha por defecto cae un
   día después del día de La Habana, y el formulario tampoco la aceptaría.
+- Mira también las imágenes que ya tienen el OCR guardado, leídas por ese texto, y debajo del
+  total separa «textos N de M, imágenes N de M». En seco las imágenes cuentan como si su
+  interruptor estuviera encendido: es el número para decidir si se enciende. Con `--execute` y
+  `SAIMC_LANE1_IMAGE_ENABLED` apagado, ninguna imagen se acepta. Ver
+  [Imágenes por su OCR](#imágenes-por-su-ocr).
+
+### Imágenes por su OCR
+
+Slice OCR como texto (`docs/spec-slice-ocr-como-texto.md`): el texto que sale del OCR de una
+imagen, ya guardado y redactado, entra al flujo de texto. Tres interruptores en el `.env`, **todos
+apagados por defecto**; después de cambiarlos, `sudo systemctl restart saimc.service` (el
+pre-cálculo lee el `.env` en cada corrida).
+
+| Variable | Exige | Qué hace |
+|---|---|---|
+| `SAIMC_LANE0_IMAGE_ENABLED` | — | el carril 0 descarta solo imágenes, leídas por su OCR |
+| `SAIMC_LANE1_IMAGE_ENABLED` | `SAIMC_LANE1_ENABLED=true` | el carril 1 acepta solo imágenes, con freno, auditoría y cota propios |
+| `SAIMC_JEV_OCR_ENABLED` | Jev activo (`SAIMC_LLM_JEV_ENABLED` y clave) | Jev pregunta por las imágenes con OCR guardado y, con `SAIMC_LANE0_JEV_ENABLED`, es segundo juez y árbitro de una imagen |
+
+- **Qué cambia aunque estén apagados**: el foco de una imagen con OCR guardado se decide con ese
+  texto. Una imagen cuyo OCR no nombra ningún piloto ya no pasa por el modelo (salvo con el carril 0
+  de imágenes encendido), igual que un texto sin foco. `--stale` rehace también las imágenes con OCR
+  guardado (sin volver a pagar OCR).
+- **En seco antes de encender** (no escribe ni gasta):
+
+  ```
+  .venv/bin/python -m saimc.validation.lane1                   # «imágenes N de M» y por qué se quedan afuera
+  .venv/bin/python -m saimc.validation.lane0                   # con SAIMC_LANE0_IMAGE_ENABLED=true en el entorno
+  .venv/bin/python -m saimc.validation.jev_signal              # con SAIMC_JEV_OCR_ENABLED=true: «(N por el OCR de una imagen)»
+  .venv/bin/python -m saimc.extraction.prefill                 # cuántos pendientes por tipo y el costo
+  ```
+
+- **Auditoría**: en `/curation/auditoria`, «Aceptados solos» separa «Textos» de «Imágenes (por su
+  OCR)», cada uno con su arranque de 60, su error auditado y su freno. Las tarjetas de imagen dicen
+  «Imagen · leída por OCR» y muestran el texto que leyó el motor. Un freno de imágenes no frena los
+  textos ni al revés. El evento de una imagen aceptada guarda `detail->>'text_source' = 'ocr'`:
+
+  ```
+  SELECT count(*) FROM curation_events WHERE mode = 'auto' AND detail->>'text_source' = 'ocr';
+  ```
+
+- **Informes**: `/control/calidad#carril-1` y la metodología pública muestran el error de las
+  imágenes aparte del de los textos; el aviso diario de Telegram suma «imágenes andando/FRENADO».
+- **Para volver atrás**: el interruptor en `false`. Lo ya aceptado sigue publicado y en la cola de
+  auditoría.
+- **Cambia algo**: solo con los interruptores encendidos. **Gasta**: Jev sobre imágenes sale del mismo
+  tope `SAIMC_LLM_JEV_MAX_COST`; el carril 1 no gasta.
 
 ### Revalidar en seco
 
@@ -638,7 +687,8 @@ decisiones y más de la mitad de las filas tocadas, celda de 5).
   `--limit N` y `--max-cost USD`.
 - **Cambia algo**: con `--execute`, sí: guarda una propuesta nueva por anuncio (la vieja queda) y puede
   descartar o aceptar solo, según los interruptores. **Gasta**: con `--execute`, sí (el 2026-10-13,
-  72 textos ≈ 0,14 USD). Solo textos.
+  72 textos ≈ 0,14 USD). Textos, e imágenes con el OCR ya guardado (desde el slice OCR como texto;
+  no vuelve a pagar OCR).
 - **Cómo leer la salida**: la misma del pre-cálculo; la línea de arriba dice con qué versión de prompt
   se compara. Es idempotente: una segunda corrida no encuentra nada viejo.
 
@@ -776,6 +826,7 @@ al curar; para los textos que se decidieron antes está el [relleno](#relleno-de
 | `SAIMC_VERCEL_API_KEY` | sin valor | la clave de Vercel AI Gateway; sin ella Jev queda inactivo aunque el interruptor esté encendido. `SAIMC_LLM_JEV_API_KEY`, su nombre anterior, sigue valiendo |
 | `SAIMC_LLM_JEV_TIMEOUT` | `10` | segundos por llamada |
 | `SAIMC_LLM_JEV_MAX_COST` | `0.01` | USD por corrida del pre-cálculo; en `0` no se llama |
+| `SAIMC_JEV_OCR_ENABLED` | `false` | también las imágenes, por su OCR guardado ([Imágenes por su OCR](#imágenes-por-su-ocr)) |
 
 Qué juntó (dentro de [psql](#abrir-psql)):
 
@@ -1137,6 +1188,33 @@ Escribe una versión nueva del conjunto de referencia de H0 con lo que lista el 
   elTOQUE (una llamada por moneda y día que no esté en `exchange_rate_cache`, con pausa de 1 s),
   con el token `SAIMC_EL_TOQUE_API` del `.env`; sin el token no corre. El dry-run no guarda en la
   cache, así que repetirlo vuelve a consultar.
+
+### Transcribir las imágenes pendientes sin OCR
+
+En seco (solo cuenta):
+
+```
+.venv/bin/python -m saimc.extraction.ocr_backfill
+```
+
+Transcribiendo y guardando:
+
+```
+.venv/bin/python -m saimc.extraction.ocr_backfill --execute
+```
+
+- **Para qué**: el texto del OCR de una imagen entra al flujo de texto. El pre-cálculo solo
+  transcribe las imágenes que le faltan de propuesta; las que ya tenían propuesta `ok` de antes
+  de K3 (28-09 al 03-10, 53 al 2026-10-20) nunca guardaron su transcripción. Este comando las
+  recorre por `ocr_store.stored_transcription`: redacta teléfonos y guarda en `ocr_transcriptions`.
+- **Cuándo**: una vez ahora, y después de subir `ocr.OCR_VERSION`. En régimen no hace falta: el
+  pre-cálculo transcribe lo nuevo.
+- **Cambia algo**: en seco, no. Con `--execute` agrega filas a `ocr_transcriptions` y nada más
+  (`raw_ingestions` no se toca). **No gasta API**: es OCR local (RapidOCR, respaldo Tesseract).
+  Tarda unos segundos por imagen.
+- Una transcripción vacía no se guarda: se cuenta como «sin texto» y la imagen vuelve a entrar
+  en la próxima corrida. `--limit N` recorre solo las N más nuevas.
+- **Cómo leer la salida**: `N imágenes recorridas: T transcriptas, E sin texto.`
 
 ### Redactar teléfonos ya guardados
 

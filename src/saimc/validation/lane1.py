@@ -60,7 +60,7 @@ from saimc.curation_events import record_curation_event
 from saimc.db import session_scope
 from saimc.exchange_rate import Fetcher, anchor_date
 from saimc.exchange_rate.eltoque import fetch_rate
-from saimc.extraction import llm_store
+from saimc.extraction import llm_store, ocr_store
 from saimc.extraction.engine import ExtractionProposal
 from saimc.extraction.llm_checks import match_rule_rows
 from saimc.extraction.llm_propose_ad import AdProposal
@@ -128,6 +128,15 @@ def build_config(settings: Settings) -> ValidationConfig:
 CONFIG = build_config(get_settings())
 
 TEXT = ContentType.TEXT.value
+IMAGE = ContentType.IMAGE.value
+#: Los tipos con freno, auditoría y cota propios (slice OCR como texto): los
+#: errores del OCR se miden aparte de los del texto nativo.
+TYPES = (TEXT, IMAGE)
+#: `detail["text_source"]` del evento de una imagen aceptada: el motor la leyó
+#: por el texto de su OCR. Un texto no lleva la clave.
+TEXT_SOURCE_OCR = "ocr"
+#: Cómo se nombra cada tipo en las salidas y en las pantallas.
+TYPE_LABELS: Mapping[str, str] = {TEXT: "textos", IMAGE: "imágenes"}
 
 #: Meta de error del carril 1, por anuncio. La eligió el operador en G1b: la
 #: misma del carril 0 de texto, no más laxa.
@@ -196,6 +205,23 @@ def enabled(settings: Settings) -> bool:
     return settings.lane1_enabled
 
 
+def image_enabled(settings: Settings) -> bool:
+    """¿Acepta también imágenes? `SAIMC_LANE1_IMAGE_ENABLED` Y el carril 1
+    encendido (slice OCR como texto). Solo, el de imágenes no hace nada."""
+    return settings.lane1_enabled and settings.lane1_image_enabled
+
+
+def text_of(session: Session, ingestion: RawIngestion) -> str | None:
+    """El texto del anuncio para el carril 1, o `None` si no se conoce.
+
+    Un texto, su original. Una imagen, la transcripción del OCR ya guardada y
+    redactada: nunca `original_text`, y sin pagar OCR (slice OCR como texto).
+    """
+    if ingestion.content_type == ContentType.TEXT:
+        return ingestion.original_text
+    return ocr_store.saved_transcription(session, ingestion)
+
+
 def rate_fetcher(settings: Settings) -> Fetcher:
     """El mismo `Fetcher` de la cola (`web.deps.get_rate_fetcher`), fuera de
     FastAPI: `eltoque.fetch_rate` con la configuración del proceso."""
@@ -217,9 +243,15 @@ def decide(
     text: str | None,
     catalog: context.Catalog,
 ) -> tuple[AdContext, AdValidation]:
-    """Lo que dice el motor del anuncio, con los parámetros del carril 1."""
+    """Lo que dice el motor del anuncio, con los parámetros del carril 1.
+
+    Una imagen se evalúa como un texto más, sobre su OCR (`lane1_images`): si
+    se acepta o no lo deciden su interruptor y su freno, en `apply_lane_1`.
+    """
     ctx = context.build_ad_context(session, ingestion, model=result, catalog=catalog, text=text)
-    return ctx, validate_ad(ctx, CONFIG)
+    return ctx, validate_ad(
+        ctx, CONFIG, lane1_images=ingestion.content_type == ContentType.IMAGE
+    )
 
 
 def _published_date(ingestion: RawIngestion, text: str) -> date | None:
@@ -293,11 +325,17 @@ def apply_lane_1(
     catalog: context.Catalog,
     fetcher: Fetcher,
     gate: Gate | None = None,
+    images: bool = False,
 ) -> bool:
     """Acepta el anuncio si el motor lo manda al carril 1. `True` si lo hizo.
 
-    Con `gate`, antes mira el freno: si está puesto, o si alguna fila cae en
-    una celda divergente, el anuncio sigue pendiente.
+    Con `gate`, antes mira el freno de su tipo: si está puesto, o si alguna
+    fila cae en una celda divergente, el anuncio sigue pendiente.
+
+    Una imagen entra solo con `images` (`image_enabled`, slice OCR como
+    texto) y leída por `text`, el OCR ya redactado. Su evento lleva
+    `detail["text_source"] = "ocr"`; un freno puesto en las imágenes no frena
+    los textos ni al revés.
 
     No hace commit: las filas van en la transacción de quien llama, dentro de
     un SAVEPOINT. Si una fila en divisa queda sin convertir se deshace el
@@ -308,9 +346,10 @@ def apply_lane_1(
     anuncio, la revisión en `llm_reviews` (queda fuera de H0 como todo lo
     asistido, y no cuenta como decisión individual) y el evento de bitácora.
     """
-    if ingestion.content_type != ContentType.TEXT:
+    kind = str(ingestion.content_type)
+    if kind != TEXT and not (images and kind == IMAGE):
         return False
-    if gate is not None and gate.brake.on:
+    if gate is not None and gate.brake_of(kind).on:
         return False
     ctx, validation = decide(session, ingestion, result, text=text, catalog=catalog)
     if validation.lane != LANE_ACCEPT:
@@ -346,11 +385,15 @@ def apply_lane_1(
         proposal_id=proposal.id,
         shown_at=None,
         decided_at=utc_now(),
-        detail={"row_count": len(entries)},
+        detail=(
+            {"row_count": len(entries)}
+            if kind == TEXT
+            else {"row_count": len(entries), "text_source": TEXT_SOURCE_OCR}
+        ),
     )
     savepoint.commit()
     if gate is not None:
-        gate.count_accepted()
+        gate.count_accepted(kind)
     return True
 
 
@@ -370,11 +413,21 @@ class AcceptedAd:
     audited_at: datetime | None = None
     #: Sus filas de hoy, descritas para la pantalla.
     rows: tuple[str, ...] = ()
+    #: El texto que leyó el motor: el original de un texto o el OCR guardado
+    #: (redactado) de una imagen (slice OCR como texto).
+    text: str = ""
+
+    @property
+    def from_ocr(self) -> bool:
+        """¿Se aceptó leyendo el OCR de una imagen?"""
+        return self.ingestion.content_type != ContentType.TEXT
 
 
-def _auto_events(session: Session) -> dict[uuid.UUID, tuple[RawIngestion, CurationEvent]]:
+def _auto_events(
+    session: Session, content_type: str | None = None
+) -> dict[uuid.UUID, tuple[RawIngestion, CurationEvent]]:
     """Anuncio -> su aceptación automática (la primera), del más viejo al más
-    nuevo."""
+    nuevo. Con `content_type`, solo los de ese tipo."""
     stmt = (
         select(RawIngestion, CurationEvent)
         .join(RawIngestion, RawIngestion.id == CurationEvent.ingestion_id)
@@ -384,6 +437,8 @@ def _auto_events(session: Session) -> dict[uuid.UUID, tuple[RawIngestion, Curati
         )
         .order_by(CurationEvent.decided_at, CurationEvent.ingestion_id)
     )
+    if content_type is not None:
+        stmt = stmt.where(RawIngestion.content_type == content_type)
     events: dict[uuid.UUID, tuple[RawIngestion, CurationEvent]] = {}
     for ingestion, event in session.execute(stmt):
         events.setdefault(ingestion.id, (ingestion, event))
@@ -696,17 +751,20 @@ def _weekly_samples(
 
 
 def _audit(
-    session: Session, settings: Settings, today: date | None
+    session: Session, settings: Settings, today: date | None, content_type: str = TEXT
 ) -> tuple[AuditState, list[tuple[RawIngestion, CurationEvent]]]:
-    """El estado de la auditoría y lo que toca auditar ahora.
+    """El estado de la auditoría de un tipo y lo que toca auditar ahora.
 
     Arranque: cuenta todo lo auditado y toca auditar todo. Después de
     `AUDIT_N0` respuestas, solo cuenta (y solo toca) lo que cae en la muestra
     de su semana; lo demás que el operador audite queda aparte (`outside`),
     porque no es al azar.
+
+    Cada tipo va aparte (slice OCR como texto): su arranque, su muestra
+    semanal y su cota salen solo de las aceptaciones de ese tipo.
     """
     since = settings.lane1_audit_since
-    events = _auto_events(session)
+    events = _auto_events(session, content_type)
     verdicts = _verdicts(session, events)
     answered = sorted(
         ((at, ingestion_id, verdict) for ingestion_id, (verdict, at) in verdicts.items()),
@@ -738,9 +796,10 @@ def _audit(
 
 
 def audit_state(
-    session: Session, settings: Settings, *, today: date | None = None
+    session: Session, settings: Settings, *, today: date | None = None, content_type: str = TEXT
 ) -> AuditState:
-    return _audit(session, settings, today)[0]
+    """Lo auditado de un tipo contra su meta. Por defecto, los textos."""
+    return _audit(session, settings, today, content_type)[0]
 
 
 @dataclass(frozen=True)
@@ -763,8 +822,10 @@ class AuditPending:
 def audit_pending(
     session: Session, settings: Settings, *, now: datetime | None = None
 ) -> AuditPending:
+    """Lo que falta auditar, de los dos tipos juntos: es un aviso de trabajo
+    pendiente, no una cota. `starting` dice si los textos, o algún tipo con
+    algo por auditar, siguen en su arranque; la espera es la del más viejo."""
     moment = now or utc_now()
-    state, waiting = _audit(session, settings, moment.date())
     events = _auto_events(session)
     answered = _verdicts(session, events)
     total = sum(
@@ -772,16 +833,33 @@ def audit_pending(
         for ingestion, _ in events.values()
         if ingestion.id not in answered and ingestion.processing_status == ProcessingStatus.CURATED
     )
-    since: datetime | None = None
-    if waiting and state.starting:
-        since = min(context.as_utc(event.decided_at) for _, event in waiting)
-    elif waiting:
-        closed = min(_week_start(event.decided_at.date()) for _, event in waiting) + timedelta(
-            weeks=1
-        )
-        since = datetime(closed.year, closed.month, closed.day, tzinfo=UTC)
-    hours = None if since is None else max(0, int((moment - since).total_seconds() // 3600))
-    return AuditPending(total=total, due=len(waiting), starting=state.starting, waiting_hours=hours)
+    due = 0
+    starting = False
+    oldest: datetime | None = None
+    for content_type in TYPES:
+        state, waiting = _audit(session, settings, moment.date(), content_type)
+        if content_type == TEXT:
+            starting = state.starting
+        if not waiting:
+            continue
+        due += len(waiting)
+        starting = starting or state.starting
+        since = _waiting_since(state, waiting)
+        oldest = since if oldest is None else min(oldest, since)
+    hours = None if oldest is None else max(0, int((moment - oldest).total_seconds() // 3600))
+    return AuditPending(total=total, due=due, starting=starting, waiting_hours=hours)
+
+
+def _waiting_since(
+    state: AuditState, waiting: Sequence[tuple[RawIngestion, CurationEvent]]
+) -> datetime:
+    """Desde cuándo espera lo que toca auditar de un tipo: en el arranque,
+    desde que se aceptó el más viejo; después, desde que cerró la semana más
+    vieja con muestra pendiente."""
+    if state.starting:
+        return min(context.as_utc(event.decided_at) for _, event in waiting)
+    closed = min(_week_start(event.decided_at.date()) for _, event in waiting) + timedelta(weeks=1)
+    return datetime(closed.year, closed.month, closed.day, tzinfo=UTC)
 
 
 def audit_queue(
@@ -790,18 +868,23 @@ def audit_queue(
     """Lo que toca auditar: todo durante el arranque, en un orden al azar pero
     fijo (así los primeros `AUDIT_N0` auditados son una muestra al azar y no
     los más viejos); después, la muestra de cada semana cerrada, del más viejo
-    al más nuevo."""
-    state, waiting = _audit(session, settings, today)
-    if state.starting:
-        waiting = sorted(waiting, key=lambda pair: _start_order(pair[0].id))
-    return [
-        AcceptedAd(
-            ingestion=ingestion,
-            event=event,
-            rows=tuple(_describe(session, row) for row in _rows(session, ingestion.id)),
-        )
-        for ingestion, event in waiting
-    ]
+    al más nuevo. Primero los textos y después las imágenes, cada tipo con
+    su arranque y su muestra (slice OCR como texto)."""
+    queue: list[AcceptedAd] = []
+    for content_type in TYPES:
+        state, waiting = _audit(session, settings, today, content_type)
+        if state.starting:
+            waiting = sorted(waiting, key=lambda pair: _start_order(pair[0].id))
+        queue += [
+            AcceptedAd(
+                ingestion=ingestion,
+                event=event,
+                rows=tuple(_describe(session, row) for row in _rows(session, ingestion.id)),
+                text=text_of(session, ingestion) or "",
+            )
+            for ingestion, event in waiting
+        ]
+    return queue
 
 
 def _start_order(ingestion_id: uuid.UUID) -> str:
@@ -821,14 +904,29 @@ def provenance_counts(session: Session) -> dict[str, int]:
 
 
 @dataclass(frozen=True)
+class Brake:
+    on: bool
+    #: Por qué está puesto, en castellano. Vacío si no lo está.
+    reason: str = ""
+
+
+@dataclass(frozen=True)
 class Summary:
-    """El carril 1 en números, para `/control` y para la metodología pública."""
+    """El carril 1 en números, para `/control` y para la metodología pública.
+
+    `state` y `brake` son los de los textos, como siempre; las imágenes van
+    aparte (`images`, `image_brake`) y nunca se suman a los textos (slice OCR
+    como texto). `rows` cuenta las filas de los dos tipos.
+    """
 
     enabled: bool
     #: Procedencia -> filas (`human`, `auto`, `audited`).
     rows: Mapping[str, int]
     state: AuditState
     brake: Brake
+    image_enabled: bool = False
+    images: AuditState = AuditState(audited=0, errors=0, unaudited=0)
+    image_brake: Brake = Brake(False)
 
     @property
     def automatic_rows(self) -> int:
@@ -842,22 +940,26 @@ class Summary:
         """Hay algo que contar: el carril está encendido o ya dejó filas."""
         return self.enabled or self.automatic_rows > 0
 
+    @property
+    def images_active(self) -> bool:
+        """Hay algo que contar de las imágenes: su interruptor está encendido o
+        el carril ya aceptó alguna."""
+        images = self.images
+        return self.image_enabled or images.audited + images.unaudited + images.outside > 0
+
 
 def summary(session: Session, settings: Settings) -> Summary:
     state = audit_state(session, settings)
+    images = audit_state(session, settings, content_type=IMAGE)
     return Summary(
         enabled=enabled(settings),
         rows=provenance_counts(session),
         state=state,
-        brake=brake_for(audited=state.audited, errors=state.errors, unaudited=state.unaudited),
+        brake=_brake_of(state),
+        image_enabled=image_enabled(settings),
+        images=images,
+        image_brake=_brake_of(images),
     )
-
-
-@dataclass(frozen=True)
-class Brake:
-    on: bool
-    #: Por qué está puesto, en castellano. Vacío si no lo está.
-    reason: str = ""
 
 
 def _percent(value: float) -> str:
@@ -895,9 +997,13 @@ def brake_for(*, audited: int, errors: int, unaudited: int) -> Brake:
     return Brake(False)
 
 
-def brake(session: Session, settings: Settings) -> Brake:
-    state = audit_state(session, settings)
+def _brake_of(state: AuditState) -> Brake:
     return brake_for(audited=state.audited, errors=state.errors, unaudited=state.unaudited)
+
+
+def brake(session: Session, settings: Settings, *, content_type: str = TEXT) -> Brake:
+    """El freno de un tipo, de lo auditado de ese tipo. Por defecto, los textos."""
+    return _brake_of(audit_state(session, settings, content_type=content_type))
 
 
 def diverging_cells(session: Session, settings: Settings) -> frozenset[tuple[str, str | None]]:
@@ -920,20 +1026,25 @@ def diverging_cells(session: Session, settings: Settings) -> frozenset[tuple[str
 
 class Gate:
     """El freno durante una corrida: se lee la base una vez y después se
-    cuenta lo que la propia corrida acepta."""
+    cuenta lo que la propia corrida acepta. Uno por tipo (slice OCR como
+    texto): el de imágenes sale solo de imágenes y el de textos, de textos."""
 
     def __init__(self, session: Session, settings: Settings) -> None:
-        state = audit_state(session, settings)
-        self._audited = state.audited
-        self._errors = state.errors
-        self._unaudited = state.unaudited
+        # Tipo -> [auditados, errores, sin auditar].
+        self._counts: dict[str, list[int]] = {}
+        for content_type in TYPES:
+            state = audit_state(session, settings, content_type=content_type)
+            self._counts[content_type] = [state.audited, state.errors, state.unaudited]
         self._diverging = diverging_cells(session, settings)
 
     @property
     def brake(self) -> Brake:
-        return brake_for(
-            audited=self._audited, errors=self._errors, unaudited=self._unaudited
-        )
+        """El freno de los textos (el de siempre)."""
+        return self.brake_of(TEXT)
+
+    def brake_of(self, content_type: str) -> Brake:
+        audited, errors, unaudited = self._counts[content_type]
+        return brake_for(audited=audited, errors=errors, unaudited=unaudited)
 
     def blocks(self, ctx: AdContext) -> bool:
         """¿Alguna fila del anuncio cae en una celda divergente?"""
@@ -947,8 +1058,8 @@ class Gate:
             for row in model.rows
         )
 
-    def count_accepted(self) -> None:
-        self._unaudited += 1
+    def count_accepted(self, content_type: str = TEXT) -> None:
+        self._counts[content_type][2] += 1
 
 
 # --- el tope de filas, medido (docs/spec-slice-tope-filas.md) -------------------
@@ -1001,14 +1112,17 @@ def admissible_share(upper: float, target: float = ERROR_TARGET) -> float:
     return (target - upper) / (1 - upper)
 
 
-def audited_by_rows(session: Session, *, since: date | None = None) -> list[RowsStratum]:
-    """Lo auditado del carril 1 por número de filas. Con `since`, solo lo
-    respondido desde ese día, como el freno con `SAIMC_LANE1_AUDIT_SINCE`.
+def audited_by_rows(
+    session: Session, *, since: date | None = None, content_type: str = TEXT
+) -> list[RowsStratum]:
+    """Lo auditado del carril 1 por número de filas, de un tipo (por defecto,
+    textos). Con `since`, solo lo respondido desde ese día, como el freno con
+    `SAIMC_LANE1_AUDIT_SINCE`.
 
     Cuenta todo lo auditado, también lo que queda fuera de la muestra
     semanal: es para decidir el tope, no para el freno.
     """
-    events = _auto_events(session)
+    events = _auto_events(session, content_type)
     answers: list[tuple[int | None, str]] = []
     for ingestion_id, (verdict, at) in _verdicts(session, events).items():
         if since is not None and at.date() < since:
@@ -1049,14 +1163,21 @@ def _por_filas(session: Session, settings: Settings, out: Callable[[str], None])
         f"Error del carril 1 por filas aceptadas ({cap_label}; "
         f"meta {_percent(ERROR_TARGET)}). Solo lectura."
     )
-    out("Todo lo auditado:")
-    for line in _rows_lines(audited_by_rows(session)):
-        out(line)
     since = settings.lane1_audit_since
-    if since is not None:
-        out(f"Desde {since.isoformat()} (SAIMC_LANE1_AUDIT_SINCE):")
-        for line in _rows_lines(audited_by_rows(session, since=since)):
+    for content_type in TYPES:
+        strata = audited_by_rows(session, content_type=content_type)
+        if content_type != TEXT and not strata:
+            continue  # sin imágenes auditadas, la salida es la de siempre
+        prefix = "" if content_type == TEXT else "Imágenes (por su OCR), aparte de los textos. "
+        out(f"{prefix}Todo lo auditado:")
+        for line in _rows_lines(strata):
             out(line)
+        if since is not None:
+            out(f"{prefix}Desde {since.isoformat()} (SAIMC_LANE1_AUDIT_SINCE):")
+            for line in _rows_lines(
+                audited_by_rows(session, since=since, content_type=content_type)
+            ):
+                out(line)
     out(
         "«Tolera» supone que un largo nunca auditado falla siempre: es la parte de "
         "los aceptados que puede tener más filas que el tope sin que la cota pase la meta."
@@ -1068,20 +1189,23 @@ def _por_filas(session: Session, settings: Settings, out: Callable[[str], None])
 
 
 def pending_with_proposal(
-    session: Session, limit: int | None = None
+    session: Session, limit: int | None = None, *, types: Sequence[str] = (TEXT,)
 ) -> list[tuple[RawIngestion, LlmProposal]]:
-    """Los textos pendientes que ya tienen una propuesta `ok`, del más viejo
-    al más nuevo."""
+    """Los pendientes de `types` que ya tienen una propuesta `ok`, del más
+    viejo al más nuevo. Una imagen, solo con el OCR ya guardado (`text_of`):
+    sin él su texto no se conoce sin pagar OCR."""
     stmt = (
         select(RawIngestion)
         .where(
             RawIngestion.processing_status == ProcessingStatus.PENDING,
-            RawIngestion.content_type == TEXT,
+            RawIngestion.content_type.in_(list(types)),
         )
         .order_by(RawIngestion.captured_at, RawIngestion.id)
     )
     pairs: list[tuple[RawIngestion, LlmProposal]] = []
     for ingestion in session.execute(stmt).scalars():
+        if ingestion.content_type != ContentType.TEXT and text_of(session, ingestion) is None:
+            continue
         proposal = llm_store.latest_ok_proposal(session, ingestion.id)
         if proposal is None:
             continue
@@ -1107,12 +1231,15 @@ def left_out_reasons(
 ) -> frozenset[str]:
     """Por qué el anuncio no entraría al carril 1. Vacío si entra.
 
-    Son los mismos controles que `apply_lane_1` (salvo el freno, que es del
-    carril y no del anuncio, y la tasa, que en seco no se resuelve). Los
+    Son los mismos controles que `apply_lane_1` (salvo el freno y el
+    interruptor de imágenes, que son del carril y no del anuncio, y la tasa,
+    que en seco no se resuelve). Una imagen se mira por su OCR guardado. Los
     motivos del motor salen de `AdValidation.reasons` sin recalcular nada,
     normalizados como los cuenta el informe de sombra (`shadow.split_reasons`).
     """
-    ctx, validation = decide(session, ingestion, result, text=None, catalog=catalog)
+    ctx, validation = decide(
+        session, ingestion, result, text=text_of(session, ingestion), catalog=catalog
+    )
     reasons: set[str] = set()
     if validation.lane != LANE_ACCEPT:
         reasons |= split_reasons(validation.reasons)
@@ -1161,8 +1288,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="python -m saimc.validation.lane1",
         description=(
-            "Aplica el carril 1 a los textos pendientes que ya tienen propuesta. "
-            "No gasta API. Por defecto, en seco."
+            "Aplica el carril 1 a los pendientes que ya tienen propuesta (las imágenes, "
+            "por su OCR guardado). No gasta API. Por defecto, en seco."
         ),
     )
     parser.add_argument(
@@ -1212,7 +1339,7 @@ def _muestra(
             hits.append((ingestion, result))
     out(f"Muestra de {min(n, len(hits))} de {len(hits)} anuncios con «{fragment}»:")
     for ingestion, result in random.Random(0).sample(hits, min(n, len(hits))):  # noqa: S311 - muestra reproducible, no cripto
-        texto = " ".join((ingestion.original_text or "").split())[:280]
+        texto = " ".join((text_of(session, ingestion) or "").split())[:280]
         out(
             f"\n  {str(ingestion.id)[:8]}  {ingestion.source_reference or '(sin canal)'}"
             f"\n  el modelo: discard={result.discard} motivo={result.discard_reason}"
@@ -1240,12 +1367,18 @@ def run(
         return _por_filas(session, settings, out)
 
     catalog = context.load_catalog(session)
-    pairs = pending_with_proposal(session, args.limit)
+    # Las imágenes se miran siempre (por su OCR guardado): en seco, para que el
+    # operador vea qué entraría antes de encender su interruptor; con
+    # --execute, `apply_lane_1` las deja pendientes si está apagado.
+    pairs = pending_with_proposal(session, args.limit, types=TYPES)
     gate = Gate(session, settings)
+    images = image_enabled(settings)
     if not args.execute:
         out("EN SECO: no se escribe nada (con --execute se aceptan).")
     if gate.brake.on:
         out(f"Carril 1 con el freno puesto: {gate.brake.reason}.")
+    if gate.brake_of(IMAGE).on:
+        out(f"Carril 1 con el freno de imágenes puesto: {gate.brake_of(IMAGE).reason}.")
     muestra = getattr(args, "muestra", None)
     if muestra is not None:
         return _muestra(session, pairs, catalog, gate, muestra, getattr(args, "n", 10), out)
@@ -1259,10 +1392,11 @@ def run(
                 ingestion,
                 proposal,
                 result,
-                text=None,
+                text=text_of(session, ingestion),
                 catalog=catalog,
                 fetcher=rate_fetcher,
                 gate=gate,
+                images=images,
             )
             # Un anuncio por transacción, como el pre-cálculo.
             session.commit()
@@ -1274,7 +1408,16 @@ def run(
             accepted.append(ingestion)
             out(f"  {str(ingestion.id)[:8]}  {ingestion.source_reference or '(sin canal)'}")
     label = "Aceptados solos (carril 1)" if args.execute else "Entrarían al carril 1"
-    out(f"{label}: {len(accepted)} de {len(pairs)} textos pendientes con propuesta.")
+    out(f"{label}: {len(accepted)} de {len(pairs)} pendientes con propuesta.")
+    out(
+        "  "
+        + ", ".join(
+            f"{TYPE_LABELS[t]} {sum(1 for i in accepted if i.content_type == t)} de "
+            f"{sum(1 for i, _ in pairs if i.content_type == t)}"
+            for t in TYPES
+        )
+        + ("" if images else " (imágenes con SAIMC_LANE1_IMAGE_ENABLED apagado: no se aceptan)")
+    )
     if not args.execute:
         for line in _reason_lines(left_out, len(pairs)):
             out(line)

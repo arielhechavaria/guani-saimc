@@ -101,25 +101,8 @@
   </div>
 {% endmacro %}
 
-{% block content %}
-<div class="m3-stack" style="gap:16px">
-
-  {# --- Carril 1 (B2b-3): lo que se aceptó solo y ya está publicado -------- #}
-  {% set s = lane1.state %}
-  <section aria-labelledby="aceptados" id="aceptados-seccion">
-    <div class="m3-section-head">
-      <h2 class="m3-h2" id="aceptados">Aceptados solos</h2>
-      <p class="m3-muted">
-        Anuncios que el carril 1 guardó sin que nadie los mirara. Ya están en el tablero.
-        {% if not lane1.enabled %}El carril 1 está apagado.{% endif %}
-      </p>
-    </div>
-    {% if lane1.brake.on %}
-    <div class="m3-card m3-card-outlined m3-card-pad b2-bound is-over-target" role="alert">
-      <strong>Freno puesto</strong>
-      <span>El carril 1 no acepta nada: {{ lane1.brake.reason }}.</span>
-    </div>
-    {% endif %}
+{# Las dos tarjetas de la cota del carril 1 de un tipo (texto o imagen). #}
+{% macro lane1_cards(s, lane1) %}
     <div class="b2-bounds">
       <div class="m3-card m3-card-outlined m3-card-pad b2-bound">
         <span class="m3-muted">Auditados</span>
@@ -141,6 +124,42 @@
         {% endif %}
       </div>
     </div>
+{% endmacro %}
+
+{% block content %}
+<div class="m3-stack" style="gap:16px">
+
+  {# --- Carril 1 (B2b-3): lo que se aceptó solo y ya está publicado -------- #}
+  {% set s = lane1.state %}
+  <section aria-labelledby="aceptados" id="aceptados-seccion">
+    <div class="m3-section-head">
+      <h2 class="m3-h2" id="aceptados">Aceptados solos</h2>
+      <p class="m3-muted">
+        Anuncios que el carril 1 guardó sin que nadie los mirara. Ya están en el tablero.
+        {% if not lane1.enabled %}El carril 1 está apagado.{% endif %}
+      </p>
+    </div>
+    {% if lane1.images_active %}<h3 class="m3-h3">Textos</h3>{% endif %}
+    {% if lane1.brake.on %}
+    <div class="m3-card m3-card-outlined m3-card-pad b2-bound is-over-target" role="alert">
+      <strong>Freno puesto</strong>
+      <span>El carril 1 no acepta {% if lane1.images_active %}ningún texto{% else %}nada{% endif %}: {{ lane1.brake.reason }}.</span>
+    </div>
+    {% endif %}
+    {{ lane1_cards(s, lane1) }}
+    {# Slice OCR como texto: las imágenes, leídas por su OCR, con su propia
+       cota y su propio freno. Nunca se suman a los textos. #}
+    {% if lane1.images_active %}
+    <h3 class="m3-h3">Imágenes (por su OCR)</h3>
+    <p class="m3-muted">{% if lane1.image_enabled %}Interruptor de imágenes encendido.{% else %}Interruptor de imágenes apagado (SAIMC_LANE1_IMAGE_ENABLED).{% endif %} Su arranque, su muestra y su cota van aparte de los textos.</p>
+    {% if lane1.image_brake.on %}
+    <div class="m3-card m3-card-outlined m3-card-pad b2-bound is-over-target" role="alert">
+      <strong>Freno de imágenes puesto</strong>
+      <span>El carril 1 no acepta ninguna imagen: {{ lane1.image_brake.reason }}.</span>
+    </div>
+    {% endif %}
+    {{ lane1_cards(lane1.image_state, lane1) }}
+    {% endif %}
     {% if lane1.without_rows %}
     <p class="m3-muted">⚠ {{ lane1.without_rows }} anuncio{{ "s" if lane1.without_rows != 1 }} curado{{ "s" if lane1.without_rows != 1 }} sin filas: no hay nada que confirmar en {{ "ellos" if lane1.without_rows != 1 else "él" }}.</p>
     {% endif %}
@@ -152,8 +171,11 @@
     <div class="b2-texts">
       {% for ad in lane1.pending %}
       <article class="m3-card m3-card-outlined a1-card" id="a{{ ad.ingestion.id }}">
-        <div class="b2-text">{{ ad.ingestion.original_text or "" }}</div>
+        <div class="b2-text">{{ ad.text }}</div>
         <div class="a1-body">
+          {% if ad.from_ocr %}
+          <span class="m3-chip m3-chip-sm" style="align-self:flex-start">Imagen · leída por OCR</span>
+          {% endif %}
           {% for fila in ad.rows %}
           <span class="m3-chip m3-chip-sm m3-chip-neutral" style="align-self:flex-start">{{ fila }}</span>
           {% endfor %}

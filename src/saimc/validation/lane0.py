@@ -53,7 +53,7 @@ from sqlalchemy.orm import Session
 from saimc.config import Settings, get_settings
 from saimc.curation_events import record_curation_event
 from saimc.db import session_scope
-from saimc.extraction import llm_store
+from saimc.extraction import llm_store, ocr_store
 from saimc.extraction.llm_propose_ad import AdProposal
 from saimc.models import (
     ContentType,
@@ -156,11 +156,14 @@ def jev_questions_hash(session: Session, settings: Settings) -> str | None:
 
 
 def _triage_probability(
-    session: Session, ingestion: RawIngestion, jev_hash: str | None
+    session: Session, ingestion: RawIngestion, jev_hash: str | None, jev_images: bool
 ) -> float | None:
-    """P(sí) del triage de la señal vigente del anuncio. Solo textos: Jev no
-    ve imágenes (C2). Una señal de otra huella o un triage ilegible es `None`."""
-    if jev_hash is None or ingestion.content_type != ContentType.TEXT:
+    """P(sí) del triage de la señal vigente del anuncio. Una imagen, solo con
+    `jev_images` (`SAIMC_JEV_OCR_ENABLED`, slice OCR como texto): Jev la leyó
+    por su OCR. Una señal de otra huella o un triage ilegible es `None`."""
+    if jev_hash is None:
+        return None
+    if ingestion.content_type != ContentType.TEXT and not jev_images:
         return None
     signal = jev_signal.current_signal(session, ingestion.id, jev_hash)
     if signal is None:
@@ -191,13 +194,16 @@ def _decide(
     catalog: context.Catalog,
     jev_hash: str | None,
     arbiter: bool,
+    jev_images: bool = False,
 ) -> _Decision:
-    p = _triage_probability(session, ingestion, jev_hash)
+    p = _triage_probability(session, ingestion, jev_hash, jev_images)
     ctx = context.build_ad_context(session, ingestion, model=result, catalog=catalog, text=text)
     ctx = dataclasses.replace(ctx, triage_probability=p)
     below = None if jev_hash is None else JEV_DISCARD_BELOW
     arbiter_below = JEV_ARBITER_BELOW if arbiter and jev_hash is not None else None
-    verdict = decide_lane_0(ctx, external_discard_below=below, arbiter_below=arbiter_below)
+    verdict = decide_lane_0(
+        ctx, external_discard_below=below, arbiter_below=arbiter_below, arbiter_images=jev_images
+    )
     if verdict.lane != LANE_DISCARD:
         return _Decision(discard=False)
     detail: dict[str, Any] | None = None
@@ -251,6 +257,7 @@ def apply_lane_0(
     catalog: context.Catalog,
     jev_hash: str | None = None,
     arbiter: bool = False,
+    jev_images: bool = False,
 ) -> bool:
     """Descarta el anuncio si el motor lo manda al carril 0. `True` si lo hizo.
 
@@ -274,9 +281,20 @@ def apply_lane_0(
     suma a Jev como árbitro con `JEV_ARBITER_BELOW`; solo cuenta con
     `jev_hash`. Esos descartes guardan el motivo del modelo y
     `decider = jev_arbiter`.
+
+    `jev_images` (de `jev_signal.ocr_enabled`, slice OCR como texto) deja que
+    Jev haga lo mismo con una imagen, por la señal sobre su OCR. Apagado, una
+    imagen nunca tiene segundo juez ni árbitro.
     """
     decision = _decide(
-        session, ingestion, result, text=text, catalog=catalog, jev_hash=jev_hash, arbiter=arbiter
+        session,
+        ingestion,
+        result,
+        text=text,
+        catalog=catalog,
+        jev_hash=jev_hash,
+        arbiter=arbiter,
+        jev_images=jev_images,
     )
     if not decision.discard:
         return False
@@ -323,10 +341,12 @@ def run_pending(
         .order_by(RawIngestion.captured_at.desc(), RawIngestion.id)
     )
     arbiter = jev_hash is not None and settings.lane0_jev_arbiter_enabled
+    jev_images = jev_signal.ocr_enabled(settings)
     would = by_arbiter = arbiter_off = 0
     for ingestion in list(session.execute(stmt).scalars()):
-        if ingestion.original_text is None:
-            continue  # una imagen sin transcribir: su texto no se conoce
+        text = _text_of(session, ingestion)
+        if text is None:
+            continue  # una imagen sin OCR guardado: su texto no se conoce
         proposal = llm_store.latest_ok_proposal(session, ingestion.id)
         if proposal is None and jev_hash is not None:
             # Con Jev decidiendo, una propuesta degradada también sirve (Rol 2).
@@ -340,10 +360,11 @@ def run_pending(
             session,
             ingestion,
             result,
-            text=ingestion.original_text,
+            text=text,
             catalog=catalog,
             jev_hash=jev_hash,
             arbiter=jev_hash is not None,
+            jev_images=jev_images,
         )
         if not decision.discard:
             continue
@@ -364,6 +385,17 @@ def run_pending(
     if not execute:
         out("EN SECO: no se escribió nada. Con --execute se descartan.")
     return 0
+
+
+def _text_of(session: Session, ingestion: RawIngestion) -> str | None:
+    """El texto del anuncio para el carril 0, o `None` si no se conoce.
+
+    Un texto, su original. Una imagen, la transcripción del OCR ya guardada y
+    redactada (slice OCR como texto): nunca `original_text`, y sin pagar OCR.
+    """
+    if ingestion.content_type == ContentType.TEXT:
+        return ingestion.original_text
+    return ocr_store.saved_transcription(session, ingestion)
 
 
 def main(argv: Sequence[str] | None = None) -> None:

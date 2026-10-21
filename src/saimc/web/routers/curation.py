@@ -1952,19 +1952,23 @@ def curation_audit(
 
 def _lane1_audit(db: Session) -> dict[str, object]:
     """Lo que la pantalla muestra del carril 1 (B2b-3): lo aceptado solo que
-    falta auditar, la cota contra la meta y si el freno está puesto."""
+    falta auditar, la cota contra la meta y si el freno está puesto. Las
+    imágenes (por su OCR) llevan su propia cota y su propio freno, aparte de
+    los textos (slice OCR como texto)."""
     settings = get_settings()
-    state = lane1.audit_state(db, settings)
+    resumen = lane1.summary(db, settings)
     pending = lane1.audit_pending(db, settings)
     return {
         "total_unaudited": pending.total,
         "enabled": lane1.enabled(settings),
         "pending": lane1.audit_queue(db, settings),
         "without_rows": lane1.curated_without_rows(db),
-        "state": state,
-        "brake": lane1.brake_for(
-            audited=state.audited, errors=state.errors, unaudited=state.unaudited
-        ),
+        "state": resumen.state,
+        "brake": resumen.brake,
+        "images_active": resumen.images_active,
+        "image_enabled": resumen.image_enabled,
+        "image_state": resumen.images,
+        "image_brake": resumen.image_brake,
         "target": lane1.ERROR_TARGET,
         "n0": lane1.AUDIT_N0,
         "max_unaudited": lane1.MAX_UNAUDITED,

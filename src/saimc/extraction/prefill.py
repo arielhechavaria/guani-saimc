@@ -105,12 +105,45 @@ _TYPE_LABELS = {ContentType.TEXT.value: "texto", ContentType.IMAGE.value: "image
 # --- selección --------------------------------------------------------------
 
 
+def _focus_text(session: Session, ingestion: RawIngestion) -> str | None:
+    """El texto con que se decide el foco, o `None` si no se sabe sin pagar.
+
+    Un texto, su original. Una imagen, la transcripción del OCR ya guardada
+    (slice OCR como texto): es el mismo texto que verán el modelo y los
+    carriles. Una imagen sin transcripción guardada no tiene foco conocido.
+    """
+    if ingestion.content_type == ContentType.TEXT:
+        return ingestion.original_text
+    return ocr_store.saved_transcription(session, ingestion)
+
+
+def _in_focus(
+    session: Session,
+    ingestion: RawIngestion,
+    products: Sequence[Product],
+    off_focus_types: frozenset[str],
+) -> bool:
+    if str(ingestion.content_type) in off_focus_types:
+        return True
+    text = _focus_text(session, ingestion)
+    return text is None or mentions_any_product(text, products)
+
+
+def _off_focus_types(*, texts: bool, images: bool) -> frozenset[str]:
+    return frozenset(
+        tipo
+        for tipo, on in ((ContentType.TEXT.value, texts), (ContentType.IMAGE.value, images))
+        if on
+    )
+
+
 def select_candidates(
     session: Session,
     products: Sequence[Product],
     limit: int | None = None,
     *,
     include_off_focus: bool = False,
+    include_off_focus_images: bool = False,
 ) -> list[RawIngestion]:
     """Pendientes sin propuesta `ok` guardada, más nuevo primero, EN FOCO.
 
@@ -121,9 +154,10 @@ def select_candidates(
     texto que no menciona ningún producto del foco se descarta en lote
     (`discard_out_of_focus`) sin pasar nunca por curaduría, así que pagarle
     una propuesta acá es tirar la plata (docs/plan-asistente-llm-cola-
-    completa.md, pendiente suelto). Una imagen sin transcribir
-    (`original_text` nulo) sigue entrando — su foco no se sabe sin pagar el
-    OCR, que esta misma corrida ya paga al pedir el texto.
+    completa.md, pendiente suelto). Una imagen con el OCR ya guardado decide
+    su foco con ese texto (slice OCR como texto); una sin transcribir sigue
+    entrando — su foco no se sabe sin pagar el OCR, que esta misma corrida ya
+    paga al pedir el texto.
 
     El filtro corre en Python, después de traer todos los pendientes: el
     `limit` tiene que contar candidatos YA filtrados, no filas de la tabla —
@@ -134,6 +168,8 @@ def select_candidates(
     también los textos sin foco: el carril 0 exige que las reglas no vean
     ningún piloto, así que sin pagarles propuesta no se descartaría ninguno.
     Apagado, no se gasta API en textos que nada va a descartar solo.
+    `include_off_focus_images` es lo mismo para las imágenes (el carril 0 de
+    imágenes encendido).
     """
     has_ok = exists().where(
         LlmProposal.ingestion_id == RawIngestion.id,
@@ -145,12 +181,9 @@ def select_candidates(
         .order_by(RawIngestion.captured_at.desc())
     )
     pending = list(session.execute(stmt).scalars().all())
+    off_focus = _off_focus_types(texts=include_off_focus, images=include_off_focus_images)
     en_foco = [
-        ingestion
-        for ingestion in pending
-        if include_off_focus
-        or ingestion.original_text is None
-        or mentions_any_product(ingestion.original_text, products)
+        ingestion for ingestion in pending if _in_focus(session, ingestion, products, off_focus)
     ]
     return en_foco if limit is None else en_foco[:limit]
 
@@ -162,35 +195,37 @@ def select_stale_candidates(
     limit: int | None = None,
     *,
     include_off_focus: bool = False,
+    include_off_focus_images: bool = False,
 ) -> list[RawIngestion]:
     """Pendientes cuya última propuesta buena se hizo con otro prompt, EN FOCO.
 
     `current_version` es la versión efectiva de hoy (`PROMPT_VERSION` más el hash
     del glosario activo). Los que no tienen propuesta no entran: son de
-    `select_candidates`. Solo textos. Mismo orden (más nuevo primero) y mismo
-    criterio de foco. Sirve para rehacer lo que se propuso antes de que el glosario o el
+    `select_candidates`. Mismo orden (más nuevo primero) y mismo criterio de
+    foco. Sirve para rehacer lo que se propuso antes de que el glosario o el
     vocabulario existieran: ahí nacen las abstenciones que frenan el carril 1
     (`docs/analisis-carril1-frenos.md`, §3).
+
+    Una imagen entra solo con el OCR ya guardado (slice OCR como texto):
+    rehacerla no suma OCR. Sin transcripción guardada sigue afuera.
     """
     stmt = (
         select(RawIngestion)
-        .where(
-            RawIngestion.processing_status == ProcessingStatus.PENDING,
-            # Solo textos: una imagen no entra al carril 1 y rehacerla suma OCR.
-            RawIngestion.content_type == ContentType.TEXT,
-        )
+        .where(RawIngestion.processing_status == ProcessingStatus.PENDING)
         .order_by(RawIngestion.captured_at.desc())
     )
+    off_focus = _off_focus_types(texts=include_off_focus, images=include_off_focus_images)
     stale: list[RawIngestion] = []
     for ingestion in session.execute(stmt).scalars().all():
         latest = llm_store.latest_ok_proposal(session, ingestion.id)
         if latest is None or latest.prompt_version == current_version:
             continue
-        if not (
-            include_off_focus
-            or ingestion.original_text is None
-            or mentions_any_product(ingestion.original_text, products)
+        if (
+            ingestion.content_type != ContentType.TEXT
+            and ocr_store.saved_transcription(session, ingestion) is None
         ):
+            continue
+        if not _in_focus(session, ingestion, products, off_focus):
             continue
         stale.append(ingestion)
     return stale if limit is None else stale[:limit]
@@ -287,8 +322,10 @@ class RunResult:
     auto_discarded: dict[str, int] = field(
         default_factory=lambda: dict.fromkeys(_TYPE_LABELS, 0)
     )
-    #: Textos que el carril 1 aceptó solos en esta corrida (B2b-2).
+    #: Anuncios que el carril 1 aceptó solos en esta corrida (B2b-2).
     auto_accepted: int = 0
+    #: De ellos, imágenes (por su OCR, slice OCR como texto).
+    auto_accepted_images: int = 0
 
 
 def run_prefill(
@@ -307,8 +344,10 @@ def run_prefill(
     lane0_types: frozenset[str] = frozenset(),
     lane0_jev_hash: str | None = None,
     lane0_jev_arbiter: bool = False,
+    lane0_jev_images: bool = False,
     lane1_fetcher: Fetcher | None = None,
     lane1_gate: lane1.Gate | None = None,
+    lane1_images: bool = False,
     out: Callable[[str], None] = print,
     llm: LLMConfig | None = None,
 ) -> RunResult:
@@ -324,12 +363,21 @@ def run_prefill(
     `lane0_jev_hash` es la huella vigente de Jev si Jev decide en el carril 0
     (`validation.lane0.jev_questions_hash`); `None`, Jev queda en sombra.
     `lane0_jev_arbiter` suma a Jev como árbitro del desacuerdo (slice
-    jev-desacuerdo); solo cuenta con `lane0_jev_hash`.
+    jev-desacuerdo); solo cuenta con `lane0_jev_hash`. `lane0_jev_images` le da
+    a Jev también las imágenes (`jev_signal.ocr_enabled`, slice OCR como texto).
 
     `lane1_fetcher` enciende el carril 1 (`validation.lane1`): es de dónde sale
     la tasa de cambio de una fila en divisa. `None`, ningún anuncio se acepta
     solo. Va después del carril 0 y solo si este no descartó. `lane1_gate` es
-    su freno (`validation.lane1.Gate`): con él puesto, nada se acepta.
+    su freno (`validation.lane1.Gate`), uno por tipo: con el de un tipo
+    puesto, nada de ese tipo se acepta. `lane1_images` deja entrar también
+    las imágenes (`validation.lane1.image_enabled`, slice OCR como texto).
+
+    Un solo texto por anuncio (slice OCR como texto): el carril 0 y el carril 1
+    reciben el mismo, ya redactado. De un texto, el original (redactado en la
+    ingesta); de una imagen, su OCR guardado, redactado otra vez por si acaso
+    (`redact_personal_data` es idempotente). Ninguno lee `original_text` de una
+    imagen.
 
     Con `max_cost`, antes de cada llamada se frena si el acumulado más lo que
     se espera que cueste la siguiente lo pasaría. «Lo que se espera» es el
@@ -382,6 +430,14 @@ def run_prefill(
         stored = llm_store.save_proposal(
             session, ingestion_id=ingestion.id, result=proposal, model=model
         )
+        # El texto que vio el modelo: el de un texto ya viene redactado de la
+        # ingesta; el OCR de una imagen se redacta acá, igual que en el borde
+        # de `propose_ad`. Es el mismo para los dos carriles.
+        lane_text = (
+            text
+            if ingestion.content_type == ContentType.TEXT
+            else redact_personal_data(text) or ""
+        )
         auto_discarded = (
             stored is not None
             and str(ingestion.content_type) in lane0_types
@@ -390,17 +446,11 @@ def run_prefill(
                 ingestion,
                 stored,
                 proposal,
-                # El texto que vio el modelo: el de un texto ya viene redactado
-                # de la ingesta; el OCR de una imagen se redacta acá, igual que
-                # en el borde de `propose_ad`.
-                text=(
-                    text
-                    if ingestion.content_type == ContentType.TEXT
-                    else redact_personal_data(text) or ""
-                ),
+                text=lane_text,
                 catalog=catalog,
                 jev_hash=lane0_jev_hash,
                 arbiter=lane0_jev_arbiter,
+                jev_images=lane0_jev_images,
             )
         )
         auto_accepted = (
@@ -412,10 +462,11 @@ def run_prefill(
                 ingestion,
                 stored,
                 proposal,
-                text=text,
+                text=lane_text,
                 catalog=catalog,
                 fetcher=lane1_fetcher,
                 gate=lane1_gate,
+                images=lane1_images,
             )
         )
         session.commit()
@@ -433,6 +484,8 @@ def run_prefill(
             tipo = str(ingestion.content_type)
             result.auto_discarded[tipo] = result.auto_discarded.get(tipo, 0) + 1
         result.auto_accepted += auto_accepted
+        if auto_accepted and ingestion.content_type != ContentType.TEXT:
+            result.auto_accepted_images += 1
         result.cost_usd += _cost(proposal.input_tokens, proposal.output_tokens, model) or 0.0
         estado = (
             f"DEGRADADO ({proposal.failure})"
@@ -582,17 +635,18 @@ def _run_mode(
             out(f"Vencidos por edad (más de {settings.queue_max_age_days} días): {vencidos}")
     products = pilot_products(session)
     lane0_types = lane0.enabled_types(settings)
-    off_focus = ContentType.TEXT.value in lane0_types
+    off_focus = {
+        "include_off_focus": ContentType.TEXT.value in lane0_types,
+        "include_off_focus_images": ContentType.IMAGE.value in lane0_types,
+    }
     if args.stale:
         version = effective_prompt_version(
             llm_propose_ad.PROMPT_VERSION, active_glossary_entries(session)
         )
-        candidates = select_stale_candidates(
-            session, products, version, args.limit, include_off_focus=off_focus
-        )
+        candidates = select_stale_candidates(session, products, version, args.limit, **off_focus)
         title = f"Pendientes con propuesta de prompt viejo (la de hoy es {version}):"
     else:
-        candidates = select_candidates(session, products, args.limit, include_off_focus=off_focus)
+        candidates = select_candidates(session, products, args.limit, **off_focus)
         title = "Pendientes sin propuesta guardada:"
     est = estimate(session, candidates, model)
 
@@ -631,10 +685,12 @@ def _run_mode(
         lane0_types=lane0_types,
         lane0_jev_hash=lane0.jev_questions_hash(session, settings),
         lane0_jev_arbiter=settings.lane0_jev_arbiter_enabled,
+        lane0_jev_images=jev_signal.ocr_enabled(settings),
         lane1_fetcher=(
             (rate_fetcher or lane1.rate_fetcher(settings)) if lane1.enabled(settings) else None
         ),
         lane1_gate=lane1_gate,
+        lane1_images=lane1.image_enabled(settings),
         out=out,
     )
     out(
@@ -649,12 +705,24 @@ def _run_mode(
         )
         + ("" if lane0_types else " (interruptores apagados)")
     )
+    images = lane1.image_enabled(settings)
     out(
         f"Aceptados solos (carril 1): {result.auto_accepted}"
         + ("" if lane1.enabled(settings) else " (interruptor apagado)")
         + (
+            f" — texto {result.auto_accepted - result.auto_accepted_images}, "
+            f"imagen {result.auto_accepted_images}"
+            if images
+            else ""
+        )
+        + (
             f" — freno puesto: {lane1_gate.brake.reason}"
             if lane1_gate is not None and lane1_gate.brake.on
+            else ""
+        )
+        + (
+            f" — freno de imágenes puesto: {lane1_gate.brake_of(lane1.IMAGE).reason}"
+            if images and lane1_gate is not None and lane1_gate.brake_of(lane1.IMAGE).on
             else ""
         )
     )

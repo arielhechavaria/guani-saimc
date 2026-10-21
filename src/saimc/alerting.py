@@ -142,6 +142,18 @@ def collect(session, settings: Settings) -> tuple[list[Alert], str]:
             alertas.append(Alert("lane1_brake", "down", f"Carril 1 frenado: {freno.reason}"))
         else:
             freno_txt = "andando"
+    if lane1.image_enabled(settings):
+        # Slice OCR como texto: el freno de las imágenes es aparte del de textos.
+        freno_img = lane1.brake(session, settings, content_type=lane1.IMAGE)
+        if freno_img.on:
+            alertas.append(
+                Alert(
+                    "lane1_image_brake",
+                    "down",
+                    f"Carril 1 de imágenes frenado: {freno_img.reason}",
+                )
+            )
+        freno_txt += f" · imágenes {'FRENADO' if freno_img.on else 'andando'}"
     resumen = daily_summary(
         last_24h(session), pending_total=snapshot.intake.pending, brake=freno_txt
     )

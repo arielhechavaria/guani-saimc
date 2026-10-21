@@ -162,6 +162,29 @@
       {% if lane1.state.outside %}Auditados fuera de la muestra, que no cuentan: {{ lane1.state.outside }}.{% endif %}
       {% if lane1.state.unaudited %}<a href="/curation/auditoria#aceptados">{{ lane1.state.unaudited }} esperan auditoría</a>.{% endif %}
     </p>
+    {# Slice OCR como texto: las imágenes, por su OCR, con cota y freno propios. #}
+    {% if lane1.images_active %}
+    {% set im = lane1.images %}
+    {% if lane1.image_brake.on %}
+    <p class="m3-sm" role="alert" style="color:var(--m3-error)">
+      <strong>Freno de imágenes puesto.</strong> El carril 1 no acepta ninguna imagen: {{ lane1.image_brake.reason }}.
+    </p>
+    {% endif %}
+    <p class="m3-sm">
+      Imágenes (por su OCR, aparte de los textos):
+      {% if lane1.image_enabled %}interruptor encendido.{% else %}interruptor apagado.{% endif %}
+      {% if im.upper is none %}
+      Todavía no se auditó ninguna imagen aceptada sola.
+      {% else %}
+      {{ im.errors }} errores en {{ im.audited }} auditadas
+      (cota superior al 95 %: {{ "%.1f"|format(im.upper * 100) }} %; meta
+      {{ "%.0f"|format(lane1_target * 100) }} %).
+      {% endif %}
+      {% if im.starting %}Arranque: se audita todo hasta llegar a {{ lane1_n0 }}.{% endif %}
+      {% if im.outside %}Auditadas fuera de la muestra, que no cuentan: {{ im.outside }}.{% endif %}
+      {% if im.unaudited %}<a href="/curation/auditoria#aceptados">{{ im.unaudited }} esperan auditoría</a>.{% endif %}
+    </p>
+    {% endif %}
     <div class="m3-card m3-table-scroll">
       <table class="m3-table">
         <thead>
