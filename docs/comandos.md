@@ -53,6 +53,7 @@ pero que no se probó al armar este catálogo. Si falla, el catálogo es el que 
 | [`saimc.extraction.llm_backtest`](#backtest-del-asistente) | Backtest del asistente contra lo curado | `--execute` escribe archivos | `--execute` sí |
 | [`scripts/jev_eval.py`](#prueba-de-jev) | Medir la calibración de Jev contra lo ya decidido (A6) | en seco no; `--execute` escribe en `data/jev_eval/` | `--execute` sí, tope 0,20 USD |
 | [`scripts/jev_envase_eval.py`](#jev-unidad-y-cantidad) | Medir si Jev acierta unidad y cantidad de una fila curada | en seco no; `--execute` escribe en `data/jev_envase_eval/` | `--execute` sí, tope 0,50 USD (~0,02 real) |
+| [`scripts/vision_backtest.py`](#visión-directa-contra-ocr--asistente) | Medir cuánto acierta un modelo de visión leyendo la imagen cruda, contra lo curado y contra OCR + asistente | en seco no; `--execute` escribe en `data/vision_backtest/` | `--execute` sí, tope 1,50 USD |
 | [`scripts/jev_arbitro_eval.py`](#jev-como-arbitro) | Medir si Jev podría arbitrar cuando el modelo descarta y las reglas ven un piloto | no | no |
 | [`pytest`, `ruff`, `mypy`, `alembic revision`](#desarrollo-local) | Suite, estilo, tipos, migración nueva | no (revision crea un archivo) | no |
 
@@ -1419,6 +1420,31 @@ desacuerdo imprime «sin muestra»: resolvé esos pendientes en la cola y volvé
 
 ```
 .venv/bin/python scripts/jev_arbitro_eval.py --gold data/llm-backtest-results-v7.jsonl
+```
+
+### Visión directa contra OCR + asistente
+
+Mide, sobre las imágenes del conjunto de referencia congelado vigente, cuánto acierta un modelo de
+visión que lee la imagen cruda (mismo prompt y esquema que el asistente) contra lo curado a mano, y
+lo pone al lado del resultado de OCR + asistente de `llm_backtest` sobre las mismas imágenes. En seco
+(por defecto) cuenta imágenes, tamaño, tokens y costo estimado y no llama a nada. `--execute` manda
+las imágenes tal cual al proveedor y gasta; corta al llegar a `--max-cost` (1,50 USD por corrida) y
+retoma sin repetir lo hecho. Solo lee la base. Resultados e informe en `data/vision_backtest/`.
+
+```
+.venv/bin/python scripts/vision_backtest.py
+```
+
+```
+.venv/bin/python scripts/vision_backtest.py --execute --limit 5
+```
+
+```
+.venv/bin/python scripts/vision_backtest.py --execute
+```
+
+```
+.venv/bin/python scripts/vision_backtest.py --report-only
 ```
 
 ---
