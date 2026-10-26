@@ -1,6 +1,9 @@
 [Unit]
 Description=Publica en el canal de WhatsApp de Guani lo aprobado del turno %i
-After=postgresql.service
+After=postgresql.service saimc-marketing.service
+# saimc-marketing.service crea los borradores a las 05:00. Con Persistent=true,
+# si el VPS estuvo apagado a esa hora los dos temporizadores corren juntos al
+# volver: este orden hace esperar al envio hasta que el lote termine.
 
 [Service]
 # Plantilla: %i es el turno (datos o educativo). La instancian

@@ -13114,3 +13114,9 @@ Contexto: WAHA 2026.8.1 no mandaba imágenes a canales de WhatsApp (500 «Data p
 Decisión: `deploy/waha/docker-compose.yml` fija `devlikeapro/waha:latest-2026.9.2`. Subir de versión es un cambio explícito del compose.
 Descartado: seguir en `latest`; un `pull` casual cambia el motor que trae el 100 % de la ingesta y puede desloguear sesiones (al actualizar, la del canal se deslogueó y hubo que vincularla de nuevo).
 Consecuencia: las correcciones de WAHA ya no llegan solas; hay que subir el número a mano y avisar que la ingesta se corta unos minutos.
+
+## 2026-10-26 — El envío al canal espera al lote y atrapa todo fallo de aprobación
+Contexto: la revisión del slice del canal avisó de dos cosas. Con `Persistent=true`, si el VPS estuvo apagado entre las 05:00 (lote de borradores) y las 06:00 (envío), los dos temporizadores corren juntos al volver y el envío podía no encontrar el borrador de hoy. Y `--auto-approve` solo atrapaba «sin datos» y «sin Chromium»: cualquier otro error de la aprobación terminaba en traceback.
+Decisión: `saimc-canal@.service` declara `After=saimc-marketing.service` (espera a que el lote termine si coinciden). El envío atrapa también `InvalidParams`, `InvalidTransition` y `OSError` (disco lleno al escribir los JPEG): mensaje claro, código 1, nada se manda.
+Descartado: un reintento con espera dentro del código (una pieza más para algo que el orden de systemd ya resuelve).
+Consecuencia: si el lote falla, el envío igual corre y sale con 1 («nada aprobado»); el fallo del lote se ve en su propia unidad.

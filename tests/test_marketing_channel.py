@@ -34,7 +34,7 @@ from saimc.marketing.channel import (
     run_channel,
     send_image,
 )
-from saimc.marketing.posts import NoData
+from saimc.marketing.posts import InvalidParams, InvalidTransition, NoData
 from saimc.models import MarketingPost, MarketingPostSlide
 from saimc.models.marketing_post import PostOrigin, PostStatus
 
@@ -531,6 +531,35 @@ class TestRunChannelAutoApprove:
         session.refresh(post)
         assert post.status == PostStatus.DRAFT
         assert post.channel_slides_sent == 0
+
+
+@pytest.mark.parametrize(
+    "falla",
+    [
+        InvalidTransition("Solo se puede aprobar un borrador."),
+        InvalidParams("«Arroz» no está en el foco."),
+        OSError(28, "No space left on device"),
+    ],
+    ids=["transicion", "parametros", "disco_lleno"],
+)
+def test_cualquier_falla_al_aprobar_sale_con_1_y_un_mensaje_sin_mandar_nada(
+    session: Session, tmp_path: Path, falla: Exception
+) -> None:
+    """Un traceback no le dice al operador qué pasó: todo lo que el botón
+    Aprobar sabe rechazar, más el disco lleno al escribir los JPEG."""
+    post = _post(session, tmp_path, status=PostStatus.DRAFT)
+    waha = Waha()
+
+    reporte = run_channel(
+        session, DIA, "datos", tmp_path, execute=True, config=CONFIG,
+        transport=waha.transport, approve_draft=AprobadorFalso(tmp_path, falla=falla),
+    )
+
+    assert reporte.exit_code == 1
+    assert "No se pudo aprobar" in reporte.message
+    assert waha.envios == []
+    session.refresh(post)
+    assert post.status == PostStatus.DRAFT
 
 
 # --- CLI ------------------------------------------------------------------------------
