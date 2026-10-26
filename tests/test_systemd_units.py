@@ -159,6 +159,16 @@ def test_canal_es_una_plantilla_oneshot_que_manda_de_verdad_el_turno() -> None:
     assert unidad["TimeoutStartSec"] == "10min"
 
 
+def test_canal_espera_al_lote_que_crea_los_borradores() -> None:
+    """Con `Persistent=true`, si el VPS estuvo apagado entre las 05:00 y las
+    06:00 los dos temporizadores corren juntos al volver: sin este orden el
+    envío podía no encontrar el borrador de hoy y ese día no salía."""
+    despues = _leer("saimc-canal@.service")["Unit"]["After"].split()
+
+    assert "saimc-marketing.service" in despues
+    assert "postgresql.service" in despues
+
+
 def test_canal_usa_el_mismo_usuario_y_directorio_que_el_backup() -> None:
     servicio = _leer("saimc-canal@.service")["Service"]
     backup = _leer("saimc-backup.service")["Service"]

@@ -56,7 +56,13 @@ from sqlalchemy.orm import Session
 from saimc.config import get_settings
 from saimc.db import session_scope
 from saimc.marketing.daily import DATOS_SLOT, EDU_SLOT, default_marketing_dir, havana_today
-from saimc.marketing.posts import NoData, approve, effective_caption
+from saimc.marketing.posts import (
+    InvalidParams,
+    InvalidTransition,
+    NoData,
+    approve,
+    effective_caption,
+)
 from saimc.marketing.render import RendererUnavailable
 from saimc.models.marketing_post import MarketingPost, PostStatus
 
@@ -230,7 +236,9 @@ def run_channel(
                 )
             try:
                 approve_draft(db, borrador)
-            except (NoData, RendererUnavailable) as error:
+            # Lo que el botón Aprobar sabe rechazar, y el disco lleno al escribir
+            # los JPEG: un mensaje claro y código 1, no un traceback.
+            except (NoData, InvalidParams, InvalidTransition, RendererUnavailable, OSError) as error:
                 db.rollback()
                 return _fin(1, f"No se pudo aprobar el borrador {borrador.id}: {error} No se manda nada.")
             db.commit()

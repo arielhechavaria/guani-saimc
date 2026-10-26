@@ -13108,3 +13108,9 @@ Contexto: el carril 1 aceptó solo una oferta de aceite «Precio CIF : 1.86€ �
 Decisión: regla determinista en el motor (`engine.import_price_term`): un texto con CIF, CFR, FOB, EXW o «pago en el exterior» va al carril 0 antes de mirar al modelo, aunque proponga filas o nombre un piloto; el carril 1 nunca lo acepta. Se escribe `off_focus` con `decider = import_price`. Amplía la definición del carril 0 de G1a (2026-10-03), que exigía que el modelo descartara. Spec: `docs/spec-slice-descarte-incoterm.md`.
 Descartado: solo impedir que el carril 1 los acepte y dejarlos en la cola (el operador eligió el descarte automático); pedirle al modelo que los descarte (no es determinista y ya los propuso como filas).
 Consecuencia: un anuncio local que mencione la sigla de pasada se descartaría solo; lo atrapa la auditoría semanal del carril 0 (39 de 39 sin falsos positivos al medirlo). Las 8 filas ya publicadas se limpian a mano. `ENGINE_VERSION` no cambia.
+
+## 2026-10-26 — El envío al canal espera al lote y atrapa todo fallo de aprobación
+Contexto: la revisión del slice del canal avisó de dos cosas. Con `Persistent=true`, si el VPS estuvo apagado entre las 05:00 (lote de borradores) y las 06:00 (envío), los dos temporizadores corren juntos al volver y el envío podía no encontrar el borrador de hoy. Y `--auto-approve` solo atrapaba «sin datos» y «sin Chromium»: cualquier otro error de la aprobación terminaba en traceback.
+Decisión: `saimc-canal@.service` declara `After=saimc-marketing.service` (espera a que el lote termine si coinciden). El envío atrapa también `InvalidParams`, `InvalidTransition` y `OSError` (disco lleno al escribir los JPEG): mensaje claro, código 1, nada se manda.
+Descartado: un reintento con espera dentro del código (una pieza más para algo que el orden de systemd ya resuelve).
+Consecuencia: si el lote falla, el envío igual corre y sale con 1 («nada aprobado»); el fallo del lote se ve en su propia unidad.
