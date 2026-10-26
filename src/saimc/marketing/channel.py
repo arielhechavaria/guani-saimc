@@ -2,16 +2,19 @@
 
     python -m saimc.marketing.channel --slot datos              # en seco: dice qué mandaría
     python -m saimc.marketing.channel --slot datos --execute    # lo manda
+    python -m saimc.marketing.channel --slot datos --execute --auto-approve
     python -m saimc.marketing.channel --slot educativo --day 2026-10-20
 
 `docs/decisions.md`, 2026-10-20. Dos temporizadores de systemd lo corren por
-turno, hora de La Habana: 08:00 los «datos» y 10:00 el «educativo»
+turno, hora de La Habana: 06:00 los «datos» y 06:30 el «educativo»
 (`systemd/saimc-canal-datos.timer`, `systemd/saimc-canal-educativo.timer`).
 
-**Solo manda lo que el operador ya aprobó** (`approved`, o `published` si ya
-lo subió a Instagram, que implica aprobada): la publicación del lote de ese
-día y ese turno. La aceptación sigue siendo manual (decisión cerrada 2); esto
-solo automatiza el envío de algo aceptado. Lo que no se aprobó a tiempo no sale.
+Manda la publicación del lote de ese día y ese turno si está aprobada
+(`approved`, o `published` si ya la subió a Instagram, que implica aprobada).
+Con `--auto-approve` (lo que usan los temporizadores, `docs/decisions.md`
+2026-10-26), si el operador no la tocó, **aprueba el borrador** con la misma
+`posts.approve` del botón Aprobar y lo manda: el operador revisa después. Un
+borrador **descartado** nunca sale. Sin `--auto-approve`, lo no aprobado no sale.
 
 Sale por una **segunda sesión de WAHA** (`SAIMC_WAHA_CHANNEL_SESSION`), con un
 número aparte del de la ingesta: si WhatsApp banea al que publica, la ingesta
@@ -29,8 +32,9 @@ con eso la publicación ya no se vuelve a mandar.
 Sin cola ni proceso permanente (decisión cerrada 3): lee, manda y termina.
 
 Códigos de salida: 0 si se mandó, se mandaría (en seco) o ya estaba enviada;
-1 si no hay nada aprobado, falta configuración, falta una imagen o WAHA
-falló. El 1 deja la unidad en «failed» y se ve en `systemctl --failed`.
+1 si no hay nada aprobado (ni borrador que aprobar), no se pudo aprobar el
+borrador, falta configuración, falta una imagen o WAHA falló. El 1 deja la
+unidad en «failed» y se ve en `systemctl --failed`.
 """
 
 from __future__ import annotations
@@ -52,8 +56,12 @@ from sqlalchemy.orm import Session
 from saimc.config import get_settings
 from saimc.db import session_scope
 from saimc.marketing.daily import DATOS_SLOT, EDU_SLOT, default_marketing_dir, havana_today
-from saimc.marketing.posts import effective_caption
+from saimc.marketing.posts import NoData, approve, effective_caption
+from saimc.marketing.render import RendererUnavailable
 from saimc.models.marketing_post import MarketingPost, PostStatus
+
+#: Aprueba un borrador en el lugar (rasteriza y congela), como `posts.approve`.
+DraftApprover = Callable[[Session, MarketingPost], None]
 
 #: Los turnos que se publican en el canal.
 SLOTS: tuple[str, ...] = (DATOS_SLOT, EDU_SLOT)
@@ -170,15 +178,15 @@ def _config_problem(config: ChannelConfig) -> str | None:
     return None
 
 
-def _approved_post(db: Session, day: date, slot: str) -> MarketingPost | None:
-    """La publicación del lote de ese día y turno, si está aprobada.
+def _batch_post(db: Session, day: date, slot: str, statuses: Sequence[str]) -> MarketingPost | None:
+    """La publicación del lote de ese día y turno, si está en `statuses`.
 
     `UNIQUE (planned_for, batch_slot)`: hay a lo sumo una."""
     return db.scalars(
         select(MarketingPost).where(
             MarketingPost.planned_for == day,
             MarketingPost.batch_slot == slot,
-            MarketingPost.status.in_((PostStatus.APPROVED, PostStatus.PUBLISHED)),
+            MarketingPost.status.in_(statuses),
         )
     ).one_or_none()
 
@@ -194,12 +202,14 @@ def run_channel(
     transport: httpx.BaseTransport | None = None,
     sleep: Callable[[float], None] = time.sleep,
     now: datetime | None = None,
+    approve_draft: DraftApprover | None = None,
 ) -> ChannelReport:
     """Manda al canal la publicación aprobada de `day` y `slot`.
 
     `images_dir` es `<marketing_dir>/posts`, contra la que se resuelve
     `slide.image_path`. Sin `execute` no llama a WAHA ni escribe. Con
-    `execute` guarda el progreso después de cada lámina."""
+    `execute` guarda el progreso después de cada lámina. Con `approve_draft`,
+    si no hay nada aprobado pero sí un borrador del turno, lo aprueba antes."""
 
     def _fin(exit_code: int, message: str) -> ChannelReport:
         return ChannelReport(day, slot, execute, exit_code, message)
@@ -208,7 +218,24 @@ def run_channel(
     if problema is not None:
         return _fin(1, f"{problema} No se manda nada.")
 
-    post = _approved_post(db, day, slot)
+    aviso = ""
+    post = _batch_post(db, day, slot, (PostStatus.APPROVED, PostStatus.PUBLISHED))
+    if post is None and approve_draft is not None:
+        borrador = _batch_post(db, day, slot, (PostStatus.DRAFT,))
+        if borrador is not None:
+            if not execute:
+                return _fin(
+                    0,
+                    f"Se aprobaría el borrador {borrador.id} y se mandarían {len(borrador.slides)} láminas.",
+                )
+            try:
+                approve_draft(db, borrador)
+            except (NoData, RendererUnavailable) as error:
+                db.rollback()
+                return _fin(1, f"No se pudo aprobar el borrador {borrador.id}: {error} No se manda nada.")
+            db.commit()
+            post = borrador
+            aviso = " El borrador se aprobó solo: revisalo en /marketing."
     if post is None:
         return _fin(1, f"No hay nada aprobado para «{slot}» del {day.isoformat()}: no se manda nada.")
     if post.channel_sent_at is not None:
@@ -264,7 +291,7 @@ def run_channel(
 
     post.channel_sent_at = now or datetime.now(UTC)
     db.commit()
-    return _fin(0, f"Enviadas {len(pendientes)} láminas{desde} al canal.")
+    return _fin(0, f"Enviadas {len(pendientes)} láminas{desde} al canal.{aviso}")
 
 
 def format_report(report: ChannelReport) -> str:
@@ -279,6 +306,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--slot", required=True, choices=SLOTS, help="el turno a publicar")
     parser.add_argument("--execute", action="store_true", help="manda de verdad")
     parser.add_argument(
+        "--auto-approve",
+        action="store_true",
+        help="si no hay nada aprobado, aprueba el borrador del turno y lo manda (no toca descartados)",
+    )
+    parser.add_argument(
         "--day", type=date.fromisoformat, default=None, help="AAAA-MM-DD; default: hoy en La Habana"
     )
     return parser.parse_args(argv)
@@ -287,14 +319,20 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
     day = args.day or havana_today()
+    images_dir = default_marketing_dir() / "posts"
+
+    def _approve(db: Session, post: MarketingPost) -> None:
+        approve(db, post, images_dir=images_dir)
+
     with session_scope() as session:
         report = run_channel(
             session,
             day,
             args.slot,
-            default_marketing_dir() / "posts",
+            images_dir,
             execute=args.execute,
             config=channel_config(),
+            approve_draft=_approve if args.auto_approve else None,
         )
     print(format_report(report))
     return report.exit_code

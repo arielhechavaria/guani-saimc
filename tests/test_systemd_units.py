@@ -154,6 +154,8 @@ def test_canal_es_una_plantilla_oneshot_que_manda_de_verdad_el_turno() -> None:
     # %i es el turno: lo pone el temporizador al instanciar la plantilla.
     assert "--slot %i" in comando
     assert "--execute" in comando
+    # Si nadie aprobó el borrador, lo aprueba y lo manda (docs/decisions.md, 2026-10-26).
+    assert "--auto-approve" in comando
     assert unidad["TimeoutStartSec"] == "10min"
 
 
@@ -167,7 +169,7 @@ def test_canal_usa_el_mismo_usuario_y_directorio_que_el_backup() -> None:
 
 @pytest.mark.parametrize(
     ("turno", "hora"),
-    [("datos", "08:00"), ("educativo", "10:00")],
+    [("datos", "06:00"), ("educativo", "06:30")],
 )
 def test_cada_turno_del_canal_sale_a_su_hora_de_la_habana(turno: str, hora: str) -> None:
     temporizador = _leer(f"saimc-canal-{turno}.timer")

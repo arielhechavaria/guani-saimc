@@ -12,14 +12,17 @@ User=ariel
 WorkingDirectory=/home/ariel/guani/guani-saimc
 
 # Manda por WAHA, con la segunda sesion (SAIMC_WAHA_CHANNEL_SESSION, numero
-# aparte del de la ingesta), la publicacion del lote de hoy y de ese turno,
-# solo si el operador ya la aprobo. Una lamina por mensaje, el texto sin
+# aparte del de la ingesta), la publicacion del lote de hoy y de ese turno. Si
+# el operador no la aprobo, --auto-approve aprueba el borrador (igual que el
+# boton Aprobar) y la manda; un descartado no sale (docs/decisions.md
+# 2026-10-26). Una lamina por mensaje, el texto sin
 # hashtags en la primera. Si se corta a mitad, la repeticion sigue desde la
 # lamina siguiente y no duplica (docs/decisions.md 2026-10-20).
-# Codigo 0 = enviada o ya enviada. Codigo 1 = nada aprobado, falta
+# Codigo 0 = enviada o ya enviada. Codigo 1 = ni aprobado ni borrador, no se
+# pudo aprobar el borrador, falta
 # configuracion (SAIMC_WAHA_CHANNEL_ID), falta una imagen o WAHA fallo: la
 # unidad queda en «failed» y se ve en `systemctl --failed`.
-ExecStart=/home/ariel/guani/guani-saimc/.venv/bin/python -m saimc.marketing.channel --slot %i --execute
+ExecStart=/home/ariel/guani/guani-saimc/.venv/bin/python -m saimc.marketing.channel --slot %i --execute --auto-approve
 
 # Unas pocas imagenes a WAHA, que corre en el mismo VPS: de sobra.
 TimeoutStartSec=10min

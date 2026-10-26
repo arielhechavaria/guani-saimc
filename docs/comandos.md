@@ -28,7 +28,7 @@ pero que no se probó al armar este catálogo. Si falla, el catálogo es el que 
 | [`saimc.queue_expiry`](#tope-de-edad-de-la-cola) | Vence los pendientes de más de N días (apagado por defecto) | en seco no; `--execute` descarta (motivo `off_focus`, evento auto) | no |
 | [`saimc.alerting`](#avisos-al-celular-telegram) | Avisos al celular por Telegram cuando algo requiere al operador | en seco no; `--execute` manda y guarda `data/alerts-state.json` | no |
 | [`saimc.marketing.daily`](#tarjetas-de-marketing-del-dia) | Crear los borradores de marketing del día en «Hoy» (`/marketing`) (lo hace solo el temporizador a las 05:00 de La Habana); no publica ni rasteriza | en seco no; `--execute` crea los borradores y borra los vencidos (borradores y descartadas de más de 30 días) | no |
-| [`saimc.marketing.channel`](#publicar-en-el-canal-de-whatsapp) | Mandar al canal de WhatsApp de Guani lo aprobado del día (lo hacen solos los temporizadores: datos 08:00, educativo 10:00) | en seco no; `--execute` manda por WAHA y anota lo enviado en `marketing_posts` | no |
+| [`saimc.marketing.channel`](#publicar-en-el-canal-de-whatsapp) | Mandar al canal de WhatsApp de Guani la publicación del día (lo hacen solos los temporizadores: datos 06:00, educativo 06:30, aprobando el borrador si nadie lo aprobó) | en seco no; `--execute` manda por WAHA y anota lo enviado en `marketing_posts`; `--auto-approve` además aprueba el borrador | no |
 | [`saimc.instagram.sync`](#seguimiento-de-instagram) | Leer la cuenta de Instagram de Guani y guardar sus métricas (lo hace solo el temporizador cada 3 h) | en seco no; `--execute` escribe las tablas `instagram_*` y renueva el token si toca | no |
 | [Visitantes únicos del sitio](#visitantes-únicos-del-sitio) | Cuántas personas distintas abrieron el sitio público un día | no | no |
 | [`saimc.validation.lane0`](#carril-0-sobre-lo-pendiente) | Aplica el carril 0 a los pendientes que ya tienen propuesta | en seco no; `--execute` descarta | no |
@@ -433,28 +433,34 @@ probarlo o adelantarlo. Desde F2 (`docs/spec-slice-fabrica-publicaciones.md`) ya
 
 ### Publicar en el canal de WhatsApp
 
-Manda al canal de WhatsApp de Guani la publicación **ya aprobada** del lote de hoy para un turno:
-`datos` o `educativo`. Una lámina por mensaje (el JPEG que hizo Aprobar) y el texto del post, sin
+Manda al canal de WhatsApp de Guani la publicación del lote de hoy para un turno: `datos` o
+`educativo`. Una lámina por mensaje (el JPEG que hizo Aprobar) y el texto del post, sin
 los hashtags de Instagram, en la primera. Sale por una **segunda sesión de WAHA**, con un número
 aparte del de la ingesta (`docs/decisions.md`, 2026-10-20). Normalmente lo corren solos
-`saimc-canal-datos.timer` (08:00 de La Habana) y `saimc-canal-educativo.timer` (10:00); esto es
-para probarlo o reenviar.
+`saimc-canal-datos.timer` (06:00 de La Habana) y `saimc-canal-educativo.timer` (06:30), con
+`--auto-approve`; esto es para probarlo o reenviar.
 
 ```
 .venv/bin/python -m saimc.marketing.channel --slot datos                     # en seco: dice qué mandaría
 .venv/bin/python -m saimc.marketing.channel --slot datos --execute           # lo manda
+.venv/bin/python -m saimc.marketing.channel --slot datos --execute --auto-approve  # aprueba el borrador si hace falta
 .venv/bin/python -m saimc.marketing.channel --slot educativo --day 2026-10-20 --execute
 ```
 
-- **Solo lo aprobado**: estado `approved` (o `published`, si ya se subió a Instagram) del día y el
-  turno pedidos. Un borrador no sale nunca: lo que no se aprobó a tiempo no se publica.
+- **Lo aprobado, o el borrador con `--auto-approve`**: sale el estado `approved` (o `published`,
+  si ya se subió a Instagram) del día y el turno pedidos. Sin aprobar, con `--auto-approve` aprueba
+  el borrador igual que el botón Aprobar (genera los JPEG y lo congela) y lo manda; el operador lo
+  revisa después en `/marketing` (`docs/decisions.md`, 2026-10-26). Sin el flag, un borrador no
+  sale. Un **descartado** no sale nunca: descartar el borrador antes del envío es la forma de
+  frenarlo. En seco con `--auto-approve` dice «Se aprobaría el borrador…» y no aprueba nada.
 - **Se puede repetir**: lo enviado queda anotado en `marketing_posts.channel_slides_sent` lámina
   por lámina y en `channel_sent_at` al completar. Si WAHA falla a mitad, la repetición sigue desde
   la lámina siguiente (sin texto, que ya salió con la primera); una ya completa dice «ya enviada»
   y no se manda de nuevo.
 - **Cambia algo**: solo con `--execute`: manda mensajes al canal (públicos, no se deshacen desde
   acá) y escribe esas dos columnas. En seco no llama a WAHA. **Gasta**: no.
-- **Código de salida 1** si no hay nada aprobado, falta configuración, falta una imagen o WAHA
+- **Código de salida 1** si no hay nada aprobado (ni borrador, con `--auto-approve`), no se pudo
+  aprobar el borrador (sin datos o sin Chromium), falta configuración, falta una imagen o WAHA
   falló: la unidad queda en «failed» (`systemctl --failed`,
   `journalctl -u saimc-canal@datos.service -n 50`). Lo que falta lo dice la salida.
 - **Configuración** (`.env`): `SAIMC_WAHA_CHANNEL_SESSION` (por defecto `guani-canal`) y

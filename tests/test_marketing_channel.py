@@ -34,6 +34,7 @@ from saimc.marketing.channel import (
     run_channel,
     send_image,
 )
+from saimc.marketing.posts import NoData
 from saimc.models import MarketingPost, MarketingPostSlide
 from saimc.models.marketing_post import PostOrigin, PostStatus
 
@@ -386,6 +387,152 @@ class TestRunChannel:
         assert post.channel_slides_sent == 1
 
 
+# --- run_channel con aprobación automática ------------------------------------------
+
+
+class AprobadorFalso:
+    """Hace lo que `posts.approve` deja hecho: un JPEG por lámina y el estado
+    `approved`. Anota a quién aprobó; `falla` simula `NoData` o sin Chromium."""
+
+    def __init__(self, images_dir: Path, falla: Exception | None = None) -> None:
+        self.images_dir = images_dir
+        self.falla = falla
+        self.aprobadas: list[MarketingPost] = []
+
+    def __call__(self, db: Session, post: MarketingPost) -> None:
+        if self.falla is not None:
+            raise self.falla
+        self.aprobadas.append(post)
+        carpeta = self.images_dir / str(post.id)
+        carpeta.mkdir(parents=True, exist_ok=True)
+        for slide in post.slides:
+            (carpeta / f"{slide.position}.jpg").write_bytes(f"AUTO{slide.position}".encode())
+            slide.snapshot = {"version": 1}
+            slide.image_path = f"{post.id}/{slide.position}.jpg"
+        post.status = PostStatus.APPROVED
+        post.approved_at = datetime(2026, 10, 20, 10, 0, tzinfo=UTC)
+
+
+class TestRunChannelAutoApprove:
+    def test_aprueba_el_borrador_del_turno_y_lo_manda(self, session: Session, tmp_path: Path) -> None:
+        post = _post(session, tmp_path, status=PostStatus.DRAFT)
+        aprobador = AprobadorFalso(tmp_path)
+        waha = Waha()
+
+        reporte = run_channel(
+            session,
+            DIA,
+            "datos",
+            tmp_path,
+            execute=True,
+            config=CONFIG,
+            transport=waha.transport,
+            sleep=lambda _: None,
+            approve_draft=aprobador,
+        )
+
+        assert reporte.exit_code == 0
+        assert aprobador.aprobadas == [post]
+        assert [base64.b64decode(e["file"]["data"]) for e in waha.envios] == [b"AUTO1", b"AUTO2", b"AUTO3"]
+        assert waha.envios[0]["caption"] == "Los datos del día: Arroz, Aceite.\n\nFuente: canales."
+        assert "aprobó solo" in reporte.message
+        session.refresh(post)
+        assert post.status == PostStatus.APPROVED
+        assert post.channel_sent_at is not None
+
+    def test_en_seco_no_aprueba_ni_manda(self, session: Session, tmp_path: Path) -> None:
+        post = _post(session, tmp_path, status=PostStatus.DRAFT)
+        aprobador = AprobadorFalso(tmp_path)
+        waha = Waha()
+
+        reporte = run_channel(
+            session,
+            DIA,
+            "datos",
+            tmp_path,
+            execute=False,
+            config=CONFIG,
+            transport=waha.transport,
+            approve_draft=aprobador,
+        )
+
+        assert reporte.exit_code == 0
+        assert "Se aprobaría el borrador" in reporte.message
+        assert aprobador.aprobadas == []
+        assert waha.envios == []
+        session.refresh(post)
+        assert post.status == PostStatus.DRAFT
+
+    def test_lo_ya_aprobado_sale_tal_cual_sin_volver_a_aprobar(
+        self, session: Session, tmp_path: Path
+    ) -> None:
+        _post(session, tmp_path)
+        aprobador = AprobadorFalso(tmp_path)
+        waha = Waha()
+
+        reporte = run_channel(
+            session,
+            DIA,
+            "datos",
+            tmp_path,
+            execute=True,
+            config=CONFIG,
+            transport=waha.transport,
+            sleep=lambda _: None,
+            approve_draft=aprobador,
+        )
+
+        assert reporte.exit_code == 0
+        assert aprobador.aprobadas == []
+        assert base64.b64decode(waha.envios[0]["file"]["data"]) == b"JPEG1"
+
+    def test_un_descartado_no_se_aprueba_ni_sale(self, session: Session, tmp_path: Path) -> None:
+        """Descartar es la forma del operador de decir «este no»: gana sobre lo automático."""
+        _post(session, tmp_path, status=PostStatus.DISCARDED)
+        aprobador = AprobadorFalso(tmp_path)
+        waha = Waha()
+
+        reporte = run_channel(
+            session,
+            DIA,
+            "datos",
+            tmp_path,
+            execute=True,
+            config=CONFIG,
+            transport=waha.transport,
+            approve_draft=aprobador,
+        )
+
+        assert reporte.exit_code == 1
+        assert "nada aprobado" in reporte.message
+        assert aprobador.aprobadas == []
+        assert waha.envios == []
+
+    def test_si_no_se_puede_aprobar_no_manda_y_queda_borrador(self, session: Session, tmp_path: Path) -> None:
+        post = _post(session, tmp_path, status=PostStatus.DRAFT)
+        aprobador = AprobadorFalso(tmp_path, falla=NoData("Sin datos para «Datos» hasta el 2026-10-19."))
+        waha = Waha()
+
+        reporte = run_channel(
+            session,
+            DIA,
+            "datos",
+            tmp_path,
+            execute=True,
+            config=CONFIG,
+            transport=waha.transport,
+            approve_draft=aprobador,
+        )
+
+        assert reporte.exit_code == 1
+        assert "No se pudo aprobar" in reporte.message
+        assert "Sin datos" in reporte.message
+        assert waha.envios == []
+        session.refresh(post)
+        assert post.status == PostStatus.DRAFT
+        assert post.channel_slides_sent == 0
+
+
 # --- CLI ------------------------------------------------------------------------------
 
 
@@ -412,6 +559,58 @@ def test_el_cli_corre_en_seco_por_defecto(
     salida = capsys.readouterr().out
     assert "EN SECO" in salida
     assert "3 láminas" in salida
+
+
+def test_el_cli_con_auto_approve_aprueba_el_borrador_con_approve(
+    session: Session, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    post = _post(session, tmp_path / "posts", status=PostStatus.DRAFT)
+    llamadas: list[tuple[MarketingPost, Path]] = []
+    falso = AprobadorFalso(tmp_path / "posts")
+
+    def _approve(db: Session, p: MarketingPost, *, images_dir: Path) -> None:
+        llamadas.append((p, images_dir))
+        falso(db, p)
+
+    @contextmanager
+    def _scope():
+        yield session
+
+    monkeypatch.setattr("saimc.marketing.channel.session_scope", _scope)
+    monkeypatch.setattr("saimc.marketing.channel.default_marketing_dir", lambda: tmp_path)
+    monkeypatch.setattr("saimc.marketing.channel.channel_config", lambda: CONFIG)
+    monkeypatch.setattr("saimc.marketing.channel.approve", _approve)
+    monkeypatch.setattr("saimc.marketing.channel.send_image", lambda *a, **k: None)
+    monkeypatch.setattr("saimc.marketing.channel.time.sleep", lambda _: None)
+
+    codigo = main(["--slot", "datos", "--day", "2026-10-20", "--execute", "--auto-approve"])
+
+    assert codigo == 0
+    assert llamadas == [(post, tmp_path / "posts")]
+    assert "Enviadas 3 láminas" in capsys.readouterr().out
+
+
+def test_el_cli_sin_auto_approve_no_aprueba_borradores(
+    session: Session, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    _post(session, tmp_path / "posts", status=PostStatus.DRAFT)
+
+    @contextmanager
+    def _scope():
+        yield session
+
+    def _no(*a: object, **k: object) -> None:
+        raise AssertionError("sin --auto-approve no se aprueba nada")
+
+    monkeypatch.setattr("saimc.marketing.channel.session_scope", _scope)
+    monkeypatch.setattr("saimc.marketing.channel.default_marketing_dir", lambda: tmp_path)
+    monkeypatch.setattr("saimc.marketing.channel.channel_config", lambda: CONFIG)
+    monkeypatch.setattr("saimc.marketing.channel.approve", _no)
+
+    codigo = main(["--slot", "datos", "--day", "2026-10-20", "--execute"])
+
+    assert codigo == 1
+    assert "nada aprobado" in capsys.readouterr().out
 
 
 def test_el_cli_solo_acepta_los_dos_turnos() -> None:
