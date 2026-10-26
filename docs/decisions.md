@@ -13120,3 +13120,9 @@ Contexto: la revisión del slice del canal avisó de dos cosas. Con `Persistent=
 Decisión: `saimc-canal@.service` declara `After=saimc-marketing.service` (espera a que el lote termine si coinciden). El envío atrapa también `InvalidParams`, `InvalidTransition` y `OSError` (disco lleno al escribir los JPEG): mensaje claro, código 1, nada se manda.
 Descartado: un reintento con espera dentro del código (una pieza más para algo que el orden de systemd ya resuelve).
 Consecuencia: si el lote falla, el envío igual corre y sale con 1 («nada aprobado»); el fallo del lote se ve en su propia unidad.
+
+## 2026-10-26 — El aviso de tasa vieja solo cuenta las monedas en uso
+Contexto: Control avisaba «La tasa de EUR tiene 12 días». El cache de tasas se llena solo al guardar una fila en esa moneda, y en toda la base hay una única fila en EUR (importada, ya descartada como clase por la entrada de precios de importación): nadie pidió la tasa del euro en 12 días porque no hubo anuncios en euros. El elTOQUE sí devuelve el euro (`ECU`).
+Decisión: `RateStatus.in_use` (filas de precio de esa moneda en los últimos 30 días); `rate_indicator` alarma solo por monedas en uso. Si ninguna se usa, muestra la más nueva sin alarma.
+Descartado: refrescar las tasas con un temporizador (agrega una pieza que mantener para convertir nada); subir `_STALE_RATE_DAYS` (esconde el atraso real de una moneda que sí se usa).
+Consecuencia: si empiezan a entrar anuncios en euros, la edad de su tasa vuelve a alarmar.

@@ -134,6 +134,48 @@ class TestRateStatus:
         assert all(s.rate is None for s in status)
 
 
+class TestRateInUse:
+    """El cache solo se llena cuando se guarda una fila en esa moneda: una
+    tasa vieja de una moneda que nadie usa no es un problema (2026-10-26, el
+    euro: una sola fila en toda la base, 12 días de «atraso» sin consecuencia)."""
+
+    def _fila(self, session: Session, currency: str) -> None:
+        h = TestAppliedRates()
+        h._fila(
+            session,
+            price="10",
+            currency=currency,
+            rate="670",
+            rate_date=date(2026, 8, 12),
+            source="elTOQUE",
+        )
+
+    def test_una_moneda_con_filas_recientes_esta_en_uso(self, session: Session) -> None:
+        _cachear(session, currency="USD", rate_date=date(2026, 8, 12), rate="670")
+        self._fila(session, "USD")
+
+        status = {s.currency: s for s in compute_rate_status(session, hoy=date(2026, 8, 13))}
+
+        assert status["USD"].in_use is True
+
+    def test_una_moneda_sin_filas_no_esta_en_uso_aunque_tenga_tasa(self, session: Session) -> None:
+        _cachear(session, currency="USD", rate_date=date(2026, 8, 12), rate="670")
+        _cachear(session, currency="EUR", rate_date=date(2026, 7, 1), rate="890")
+        self._fila(session, "USD")
+
+        status = {s.currency: s for s in compute_rate_status(session, hoy=date(2026, 8, 13))}
+
+        assert status["EUR"].in_use is False
+
+    def test_una_fila_de_hace_mas_de_30_dias_ya_no_cuenta(self, session: Session) -> None:
+        _cachear(session, currency="EUR", rate_date=date(2026, 7, 1), rate="890")
+        self._fila(session, "EUR")
+
+        status = {s.currency: s for s in compute_rate_status(session, hoy=date(2027, 1, 1))}
+
+        assert status["EUR"].in_use is False
+
+
 class TestAppliedRates:
     def _fila(
         self,
