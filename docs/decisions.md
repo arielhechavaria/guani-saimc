@@ -13108,3 +13108,9 @@ Contexto: el carril 1 aceptó solo una oferta de aceite «Precio CIF : 1.86€ �
 Decisión: regla determinista en el motor (`engine.import_price_term`): un texto con CIF, CFR, FOB, EXW o «pago en el exterior» va al carril 0 antes de mirar al modelo, aunque proponga filas o nombre un piloto; el carril 1 nunca lo acepta. Se escribe `off_focus` con `decider = import_price`. Amplía la definición del carril 0 de G1a (2026-10-03), que exigía que el modelo descartara. Spec: `docs/spec-slice-descarte-incoterm.md`.
 Descartado: solo impedir que el carril 1 los acepte y dejarlos en la cola (el operador eligió el descarte automático); pedirle al modelo que los descarte (no es determinista y ya los propuso como filas).
 Consecuencia: un anuncio local que mencione la sigla de pasada se descartaría solo; lo atrapa la auditoría semanal del carril 0 (39 de 39 sin falsos positivos al medirlo). Las 8 filas ya publicadas se limpian a mano. `ENGINE_VERSION` no cambia.
+
+## 2026-10-26 — WAHA con versión fija (2026.9.2)
+Contexto: WAHA 2026.8.1 no mandaba imágenes a canales de WhatsApp (500 «Data passed to getter must include an id property»); con la 2026.9.2 sí. El compose usaba `devlikeapro/waha` sin etiqueta, o sea `latest`.
+Decisión: `deploy/waha/docker-compose.yml` fija `devlikeapro/waha:latest-2026.9.2`. Subir de versión es un cambio explícito del compose.
+Descartado: seguir en `latest`; un `pull` casual cambia el motor que trae el 100 % de la ingesta y puede desloguear sesiones (al actualizar, la del canal se deslogueó y hubo que vincularla de nuevo).
+Consecuencia: las correcciones de WAHA ya no llegan solas; hay que subir el número a mano y avisar que la ingesta se corta unos minutos.

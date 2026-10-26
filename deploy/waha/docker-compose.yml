@@ -12,7 +12,13 @@
 
 services:
   waha:
-    image: devlikeapro/waha
+    # Versión fija a propósito: con `latest`, un `docker pull` cambia WAHA sin
+    # aviso y corta la ingesta. La 2026.8.1 no mandaba imágenes a canales (500
+    # «Data passed to getter must include an id property»); la 2026.9.2 sí
+    # (docs/decisions.md, 2026-10-26). Para subir: cambiar este número, `docker
+    # compose pull` y `docker compose up -d`; la ingesta se corta unos minutos
+    # y la sesión del canal puede pedir vincularse de nuevo.
+    image: devlikeapro/waha:latest-2026.9.2
     container_name: waha
     restart: unless-stopped
     ports:
