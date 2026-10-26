@@ -1546,3 +1546,92 @@ def test_sin_tope_t9_siete_filas_con_tope_6_van_a_revision() -> None:
 
     assert resultado.lane == 2
     assert resultado.reasons == (MOTIVO_TOPE_6,)
+
+
+# --- Precio de importación: CIF, CFR, FOB, EXW (docs/decisions.md, 2026-10-26) --------
+#
+# Un precio CIF o CFR es el de la mercancía en el puerto de destino, sin
+# nacionalizar; FOB y EXW, en origen. Ninguno es un precio del mercado interno:
+# el anuncio va al carril 0 aunque el modelo proponga filas y nombre un piloto.
+
+# El anuncio real que dejó la única fila en EUR de la base (aceite a 110 CUP/l).
+CONTENEDOR_CIF = (
+    "Llega 22/10\nContenedor de aceite Girasol 1lt \n3630 cajas x 15 unid\n"
+    "Precio CIF : 1.86€( se puede pagar en usd )\n\n🚨PAGO EN EL EXTERIOR 🚨\n"
+    "Si desea reservar al pv"
+)
+ACEITE_CIF = _fila(ACEITE, "1.86", moneda="EUR", cantidad="15", unidad="l")
+
+
+def test_un_precio_cif_va_al_carril_0_aunque_el_modelo_proponga_filas() -> None:
+    from saimc.validation import decide_lane_0
+
+    ctx = _ctx(CONTENEDOR_CIF, modelo=_modelo(ACEITE_CIF), reglas=(ACEITE_CIF,))
+
+    resultado = decide_lane_0(ctx)
+
+    assert resultado.lane == 0
+    assert resultado.reasons == ("precio de importación (CIF): no es un precio del mercado interno",)
+
+
+@pytest.mark.parametrize(
+    ("texto", "termino"),
+    [
+        ("Arroz Guyana 0.53 USD/kg CFR Mariel, contenedor de 25 t", "CFR"),
+        ("Pollo congelado 1.20 USD/kg FOB Brasil", "FOB"),
+        ("Aceite 1.10 USD el litro, precio exw fábrica", "EXW"),
+        ("Arroz 0.82 USD/kg, saco de 25 kg. Pago en el exterior", "pago en el exterior"),
+        ("Azúcar 0.60 USD/kg. PAGOS EN EL EXTERIOR", "pago en el exterior"),
+        ("Arroz 0,82 c.i.f. habana", None),  # con puntos no es la sigla: no se adivina
+    ],
+)
+def test_cada_termino_de_importacion_descarta_y_lo_nombra(texto: str, termino: str | None) -> None:
+    from saimc.validation import decide_lane_0, import_price_term
+
+    assert import_price_term(texto) == termino
+    resultado = decide_lane_0(_ctx(texto, modelo=_modelo(_fila())))
+    if termino is None:
+        assert resultado.lane == 2
+    else:
+        assert resultado.lane == 0
+        assert f"({termino})" in resultado.reasons[0]
+
+
+@pytest.mark.parametrize(
+    "texto",
+    [
+        "La cifra de hoy: arroz 320 la libra",  # «cif» dentro de una palabra
+        "Arroz 320 CUP, envío al exterior de la tienda",  # «exterior» sin «pago en el»
+        "Pollo 450 la libra, pago en efectivo",
+    ],
+)
+def test_sin_termino_de_importacion_el_carril_0_no_cambia(texto: str) -> None:
+    from saimc.validation import decide_lane_0, import_price_term
+
+    assert import_price_term(texto) is None
+    assert decide_lane_0(_ctx(texto, modelo=_modelo(_fila()))).lane == 2
+
+
+def test_un_precio_cif_va_al_carril_0_aunque_no_haya_propuesta_del_modelo() -> None:
+    """La regla mira el texto, no al modelo: un modelo caído no la apaga."""
+    from saimc.validation import decide_lane_0
+
+    for modelo in (None, AdProposal(degraded=True, failure="timeout")):
+        assert decide_lane_0(_ctx(CONTENEDOR_CIF, modelo=modelo)).lane == 0
+
+
+def test_el_carril_1_nunca_acepta_un_precio_cif() -> None:
+    """Aunque modelo y reglas coincidan en todo, con configuración va al 0, no al 1."""
+    ctx = _ctx(CONTENEDOR_CIF, modelo=_modelo(ACEITE_CIF), reglas=(ACEITE_CIF,), celdas=(CELDA_ARROZ,))
+
+    resultado = validate_ad(ctx, CONFIG)
+
+    assert resultado.lane == 0
+    assert "CIF" in resultado.reasons[0]
+
+
+def test_sin_configuracion_un_precio_cif_va_a_la_cola() -> None:
+    """Igual que todo `validate_ad` sin configuración: no se automatiza nada."""
+    resultado = validate_ad(_ctx(CONTENEDOR_CIF, modelo=_modelo(ACEITE_CIF), celdas=(CELDA_ARROZ,)), None)
+
+    assert resultado.lane == 2

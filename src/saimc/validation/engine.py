@@ -26,6 +26,7 @@ Dos cosas que conviene tener presentes al leerlo:
 from __future__ import annotations
 
 import math
+import re
 import uuid
 from collections.abc import Sequence
 from datetime import datetime
@@ -407,6 +408,13 @@ def validate_ad(
     No es un parámetro de `ValidationConfig` a propósito: no se calibra, y así
     el informe de sombra sigue registrando los mismos parámetros.
     """
+    import_discard = _import_price_discard(ctx)
+    if import_discard is not None:
+        if config is None:
+            reasons = ("no hay configuración de parámetros: no se automatiza", *import_discard.reasons)
+            return AdValidation(LANE_REVIEW, reasons)
+        return import_discard
+
     model = ctx.model
     if model is None:
         return AdValidation(LANE_REVIEW, ("el anuncio no tiene propuesta del modelo",))
@@ -511,7 +519,15 @@ def decide_lane_0(
     no ve imágenes), salvo con `arbiter_images`: Jev leyó la imagen por su OCR
     (`SAIMC_JEV_OCR_ENABLED`, slice OCR como texto). Sin señal válida, sigue a
     la cola. Con `None`, lo de antes.
+
+    Antes que todo eso, un precio de importación (CIF, CFR, FOB, EXW o «pago
+    en el exterior», `import_price_term`) va al carril 0 por el texto solo,
+    proponga el modelo lo que proponga (docs/decisions.md, 2026-10-26).
     """
+    import_discard = _import_price_discard(ctx)
+    if import_discard is not None:
+        return import_discard
+
     model = ctx.model
     judged = external_discard_below is not None or arbiter_below is not None
     p = _triage(ctx.triage_probability) if judged else None
@@ -584,6 +600,38 @@ def pilot_in_text(ctx: AdContext) -> bool:
     # dígito y no el significado: un «2» suelto ya basta para que lo mire una
     # persona, que es la lectura conservadora.
     return has_digit(ctx.text) and mentions_any_product(ctx.text, ctx.pilot_products)
+
+
+#: Los términos de un precio de importación. CIF y CFR: la mercancía en el
+#: puerto de destino, sin nacionalizar; FOB y EXW: en origen. «Pago en el
+#: exterior» es la otra cara de lo mismo. Ninguno es un precio del mercado
+#: interno (docs/decisions.md, 2026-10-26). Sigla suelta: «cifra» no cuenta, y
+#: «c.i.f.» con puntos tampoco, para no adivinar.
+_IMPORT_PRICE_TERMS = re.compile(r"\b(cif|cfr|fob|exw)\b", re.IGNORECASE)
+_PAID_ABROAD = re.compile(r"\bpagos?\s+en\s+el\s+exterior\b", re.IGNORECASE)
+
+
+def import_price_term(text: str) -> str | None:
+    """El término de importación que trae el texto (`"CIF"`, `"CFR"`, `"FOB"`,
+    `"EXW"` o `"pago en el exterior"`), o `None`. Si hay varios, la sigla."""
+    sigla = _IMPORT_PRICE_TERMS.search(text)
+    if sigla is not None:
+        return sigla.group(1).upper()
+    if _PAID_ABROAD.search(text):
+        return "pago en el exterior"
+    return None
+
+
+def _import_price_discard(ctx: AdContext) -> AdValidation | None:
+    """Carril 0 para un precio de importación, por el texto solo. `None` si no
+    lo es. No mira al modelo ni el piloto: un contenedor de arroz nombra al
+    arroz, y justamente por eso no tiene que entrar."""
+    term = import_price_term(ctx.text)
+    if term is None:
+        return None
+    return AdValidation(
+        LANE_DISCARD, (f"precio de importación ({term}): no es un precio del mercado interno",)
+    )
 
 
 def has_digit(text: str) -> bool:

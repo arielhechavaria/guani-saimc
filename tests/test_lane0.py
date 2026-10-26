@@ -1608,3 +1608,51 @@ def test_a9_la_semana_en_curso_sin_descartes_del_arbitro_dice_lo_de_hoy(
     assert "todavía no terminó" in html
     assert "sigue abierta" not in html
     assert f"/curation/auditoria/{del_modelo.id}/rescatar" not in html
+
+
+# --- Precio de importación (docs/decisions.md, 2026-10-26) ----------------------
+
+_PROPONE_ARROZ_CIF = {
+    "discard": False,
+    "rows": [
+        {
+            "product": "Arroz",
+            "price": 0.82,
+            "currency": "USD",
+            "quantity": 1,
+            "unit": "kg",
+            "province": None,
+            "evidence": "arroz 0.82 USD/kg CIF",
+            "currency_explicit": True,
+        }
+    ],
+}
+
+
+def test_un_precio_cif_se_descarta_solo_aunque_el_modelo_proponga_filas(
+    session: Session, catalogo: SimpleNamespace, tmp_path: Path
+) -> None:
+    ingesta = _ingesta(session, texto="Contenedor de arroz 0.82 USD/kg CIF Mariel, sacos de 25 kg")
+
+    salida = _correr(session, tmp_path, ClienteFalso(_PROPONE_ARROZ_CIF), lane0_text_enabled=True)
+
+    session.refresh(ingesta)
+    assert ingesta.processing_status == ProcessingStatus.DISCARDED
+    # Fuera de foco: es un precio, pero no del mercado interno.
+    assert ingesta.discard_reason == "off_focus"
+    (evento,) = _eventos(session, ingesta)
+    assert evento.mode == "auto"
+    assert evento.discard_reason == "off_focus"
+    assert evento.detail == {"decider": "import_price", "term": "CIF"}
+    assert list(session.execute(select(PriceHistory)).scalars()) == []
+    assert "Descartados solos (carril 0): texto 1, imagen 0" in salida
+
+
+def test_un_precio_cif_con_el_interruptor_apagado_sigue_pendiente(
+    session: Session, catalogo: SimpleNamespace, tmp_path: Path
+) -> None:
+    ingesta = _ingesta(session, texto="Contenedor de arroz 0.82 USD/kg CIF Mariel, sacos de 25 kg")
+
+    _correr(session, tmp_path, ClienteFalso(_PROPONE_ARROZ_CIF))
+
+    _sigue_pendiente_sin_evento(session, ingesta)

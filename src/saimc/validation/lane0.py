@@ -69,7 +69,7 @@ from saimc.models import (
 from saimc.models.base import utc_now
 from saimc.progress import _week_start
 from saimc.validation import context, jev_signal
-from saimc.validation.engine import decide_lane_0, has_digit, pilot_in_text
+from saimc.validation.engine import decide_lane_0, has_digit, import_price_term, pilot_in_text
 from saimc.validation.stats import clopper_pearson_upper
 from saimc.validation.types import LANE_DISCARD
 
@@ -115,6 +115,11 @@ JEV_ARBITER_BELOW = 0.2
 #: `detail["decider"]` de un descarte que arbitró Jev. Tiene cota propia
 #: (`arbiter_bound`).
 JEV_ARBITER_DECIDER = "jev_arbiter"
+#: `detail["decider"]` de un descarte por precio de importación (CIF, CFR, FOB,
+#: EXW o «pago en el exterior», `engine.import_price_term`): lo decide el
+#: texto solo, no el modelo (docs/decisions.md, 2026-10-26). Cuenta en la cota
+#: de su tipo como cualquier otro descarte.
+IMPORT_PRICE_DECIDER = "import_price"
 #: La variable de entorno que apaga solo al árbitro.
 JEV_ARBITER_SWITCH = "SAIMC_LANE0_JEV_ARBITER_ENABLED"
 #: Mientras las semanas anteriores sumen menos descartes del árbitro que esto,
@@ -206,6 +211,15 @@ def _decide(
     )
     if verdict.lane != LANE_DISCARD:
         return _Decision(discard=False)
+    term = import_price_term(ctx.text)
+    if term is not None:
+        # Es un precio, pero no del mercado interno: fuera de foco, aunque el
+        # modelo haya propuesto filas (y entonces no trae motivo propio).
+        return _Decision(
+            discard=True,
+            reason=DiscardReason.OFF_FOCUS.value,
+            detail={"decider": IMPORT_PRICE_DECIDER, "term": term},
+        )
     detail: dict[str, Any] | None = None
     reason = result.discard_reason
     if p is not None:

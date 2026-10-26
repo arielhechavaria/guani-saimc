@@ -30,6 +30,7 @@ públicas para los controles de §10.7, C3) y `measure_n`
 from saimc.validation.engine import (
     ENGINE_VERSION,
     decide_lane_0,
+    import_price_term,
     validate_ad,
     validate_stored_row,
 )
@@ -67,6 +68,7 @@ __all__ = [
     "ValidationConfig",
     "ValidationStatus",
     "decide_lane_0",
+    "import_price_term",
     "validate_ad",
     "validate_stored_row",
 ]
