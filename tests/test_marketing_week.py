@@ -281,6 +281,11 @@ class TestSemanaRuta:
     def test_desde_mueve_de_semana_y_normaliza_a_lunes(
         self, client: TestClient, fabrica: Path  # noqa: F811
     ) -> None:
+        from saimc.web.app import app
+        from saimc.web.routers.marketing import get_today
+
+        # «Hoy» fijo: con el reloj real, la semana del 26-oct dejó de ser futura.
+        app.dependency_overrides[get_today] = lambda: MIERCOLES
         html = client.get("/marketing/semana?desde=2026-10-28").text  # un miércoles
 
         assert "Lunes 26" in html
