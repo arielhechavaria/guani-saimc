@@ -13108,3 +13108,9 @@ Contexto: el carril 1 aceptó solo una oferta de aceite «Precio CIF : 1.86€ �
 Decisión: regla determinista en el motor (`engine.import_price_term`): un texto con CIF, CFR, FOB, EXW o «pago en el exterior» va al carril 0 antes de mirar al modelo, aunque proponga filas o nombre un piloto; el carril 1 nunca lo acepta. Se escribe `off_focus` con `decider = import_price`. Amplía la definición del carril 0 de G1a (2026-10-03), que exigía que el modelo descartara. Spec: `docs/spec-slice-descarte-incoterm.md`.
 Descartado: solo impedir que el carril 1 los acepte y dejarlos en la cola (el operador eligió el descarte automático); pedirle al modelo que los descarte (no es determinista y ya los propuso como filas).
 Consecuencia: un anuncio local que mencione la sigla de pasada se descartaría solo; lo atrapa la auditoría semanal del carril 0 (39 de 39 sin falsos positivos al medirlo). Las 8 filas ya publicadas se limpian a mano. `ENGINE_VERSION` no cambia.
+
+## 2026-10-26 — El aviso de tasa vieja solo cuenta las monedas en uso
+Contexto: Control avisaba «La tasa de EUR tiene 12 días». El cache de tasas se llena solo al guardar una fila en esa moneda, y en toda la base hay una única fila en EUR (importada, ya descartada como clase por la entrada de precios de importación): nadie pidió la tasa del euro en 12 días porque no hubo anuncios en euros. El elTOQUE sí devuelve el euro (`ECU`).
+Decisión: `RateStatus.in_use` (filas de precio de esa moneda en los últimos 30 días); `rate_indicator` alarma solo por monedas en uso. Si ninguna se usa, muestra la más nueva sin alarma.
+Descartado: refrescar las tasas con un temporizador (agrega una pieza que mantener para convertir nada); subir `_STALE_RATE_DAYS` (esconde el atraso real de una moneda que sí se usa).
+Consecuencia: si empiezan a entrar anuncios en euros, la edad de su tasa vuelve a alarmar.

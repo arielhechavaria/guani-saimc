@@ -269,17 +269,26 @@ def rate_indicator(statuses: list[RateStatus], *, now: datetime) -> Indicator:
             anchor="#tasa",
         )
 
-    peor = max(con_fecha, key=lambda s: s.age_days or 0)
+    # Una moneda sin filas recientes no se resuelve nunca: su tasa vieja no es
+    # un atraso. Solo alarman las que se usan; si no se usa ninguna, se muestra
+    # la más nueva, sin alarma.
+    en_uso = [s for s in con_fecha if s.in_use]
+    peor = (
+        max(en_uso, key=lambda s: s.age_days or 0)
+        if en_uso
+        else min(con_fecha, key=lambda s: s.age_days or 0)
+    )
     edad = peor.age_days or 0
+    vieja = peor.in_use and edad >= _STALE_RATE_DAYS
     return Indicator(
         key="rate",
         label="Tasa de cambio",
         value="al día" if edad == 0 else f"hace {edad} d",
-        level="warn" if edad >= _STALE_RATE_DAYS else "ok",
+        level="warn" if vieja else "ok",
         hint=(
             f"La tasa de {peor.currency} tiene {edad} días. Se sigue usando la "
             "última conocida."
-            if edad >= _STALE_RATE_DAYS
+            if vieja
             else ""
         ),
         anchor="#tasa",

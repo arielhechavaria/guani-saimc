@@ -156,6 +156,32 @@ class TestTasa:
         assert ind.level == "warn"
         assert "EUR" in ind.hint
 
+    def test_una_tasa_vieja_de_una_moneda_sin_uso_no_alarma(self) -> None:
+        """El cache solo se llena al guardar una fila en esa moneda: sin filas
+        recientes, la edad de su tasa no es un atraso."""
+        euro_sin_uso = RateStatus("EUR", None, None, None, None, 12, False, in_use=False)
+
+        ind = health_strip.rate_indicator([self._rate("USD", 0), euro_sin_uso], now=AHORA)
+
+        assert ind.level == "ok"
+        assert ind.value == "al día"
+        assert ind.hint == ""
+
+    def test_una_tasa_vieja_de_una_moneda_en_uso_si_alarma(self) -> None:
+        euro_en_uso = RateStatus("EUR", None, None, None, None, 12, False, in_use=True)
+
+        ind = health_strip.rate_indicator([self._rate("USD", 0), euro_en_uso], now=AHORA)
+
+        assert ind.level == "warn"
+        assert "EUR" in ind.hint
+
+    def test_si_ninguna_moneda_esta_en_uso_no_alarma(self) -> None:
+        solo_vieja = RateStatus("EUR", None, None, None, None, 12, False, in_use=False)
+
+        ind = health_strip.rate_indicator([solo_vieja], now=AHORA)
+
+        assert ind.level == "ok"
+
     def test_sin_ninguna_tasa_avisa(self) -> None:
         ind = health_strip.rate_indicator([], now=AHORA)
 

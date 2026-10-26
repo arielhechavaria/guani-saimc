@@ -26,7 +26,7 @@ verdad.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 
 from sqlalchemy import func, select
@@ -34,6 +34,10 @@ from sqlalchemy.orm import Session
 
 from saimc.exchange_rate import cache
 from saimc.models import Currency, ExchangeRateCache, PriceHistory
+
+#: Ventana para decir que una moneda está en uso: filas de precio de los
+#: últimos días (`RateStatus.in_use`).
+IN_USE_DAYS = 30
 
 # Las monedas que requieren conversión. CUP queda fuera: no se convierte a sí
 # misma, y `RateResolver` nunca la resuelve.
@@ -59,6 +63,10 @@ class RateStatus:
     # esta moneda va a salir a la red, y si elTOQUE no responde degrada a la
     # última conocida.
     has_today: bool
+    # `True` si hubo alguna fila de precio en esta moneda en los últimos
+    # `IN_USE_DAYS` días. El cache solo se llena al guardar una fila en esa
+    # moneda, así que sin uso la edad de su tasa no es un atraso: nadie la pidió.
+    in_use: bool = True
 
 
 def compute_rate_status(session: Session, *, hoy: date | None = None) -> list[RateStatus]:
@@ -69,6 +77,12 @@ def compute_rate_status(session: Session, *, hoy: date | None = None) -> list[Ra
     se ve en ningún otro lado.
     """
     today = hoy or date.today()
+    desde = datetime.combine(today - timedelta(days=IN_USE_DAYS), time.min, tzinfo=UTC)
+    en_uso = set(
+        session.scalars(
+            select(PriceHistory.currency).where(PriceHistory.created_at >= desde).distinct()
+        )
+    )
 
     salida: list[RateStatus] = []
     for currency in _FOREIGN_CURRENCIES:
@@ -87,6 +101,7 @@ def compute_rate_status(session: Session, *, hoy: date | None = None) -> list[Ra
                     fetched_at=None,
                     age_days=None,
                     has_today=False,
+                    in_use=currency in en_uso,
                 )
             )
             continue
@@ -108,6 +123,7 @@ def compute_rate_status(session: Session, *, hoy: date | None = None) -> list[Ra
                 fetched_at=fila.fetched_at if fila is not None else None,
                 age_days=(today - rate_date).days,
                 has_today=cache.get_for_date(session, currency, today) is not None,
+                in_use=currency in en_uso,
             )
         )
 
