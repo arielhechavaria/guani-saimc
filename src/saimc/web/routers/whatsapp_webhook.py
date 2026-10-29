@@ -24,11 +24,12 @@ import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from saimc.config import get_settings
+from saimc.config import Settings, get_settings
 from saimc.ingestion.inbox import ingest_inbox
 from saimc.ingestion.whatsapp_media import fetch_media, is_trusted_media_url
 from saimc.ingestion.whatsapp_webhook import (
@@ -151,6 +152,16 @@ async def whatsapp_webhook(request: Request, db: Session = Depends(get_db)) -> J
         )
         return JSONResponse({"ingested": 0, "reason": "sin mensaje utilizable"})
 
+    return await run_in_threadpool(_ingerir, db, settings, mensaje)
+
+
+def _ingerir(db: Session, settings: Settings, mensaje: ParsedMessage) -> JSONResponse:
+    """Parte bloqueante del webhook: base, descarga de la foto y disco.
+
+    Corre en el threadpool y no en el event loop: el handler es `async` solo
+    para leer el body, y una descarga de hasta `waha_timeout` segundos dentro
+    del loop congelaba todo el servidor, la web incluida (2026-10-29).
+    """
     channel = db.execute(
         select(Channel).where(
             Channel.external_id == mensaje.chat_id, Channel.is_active.is_(True)
@@ -162,6 +173,11 @@ async def whatsapp_webhook(request: Request, db: Session = Depends(get_db)) -> J
             "webhook.descartado motivo=canal_no_registrado %s", _contexto(mensaje=mensaje)
         )
         return JSONResponse({"ingested": 0, "reason": "canal no registrado o inactivo"})
+    canal_id, canal_nombre = channel.id, channel.name
+    # La búsqueda abrió una transacción. Se cierra antes de tocar la red: con la
+    # descarga abierta, una ráfaga de eventos deja una conexión `idle in
+    # transaction` por request y agota el pool (2026-10-29).
+    db.commit()
 
     settings.inbox_dir.mkdir(parents=True, exist_ok=True)
     if mensaje.text:
@@ -175,7 +191,7 @@ async def whatsapp_webhook(request: Request, db: Session = Depends(get_db)) -> J
             logger.warning(
                 "webhook.descartado motivo=%s canal=%s %s",
                 motivo,
-                channel.name,
+                canal_nombre,
                 _contexto(mensaje=mensaje),
             )
             return JSONResponse({"ingested": 0, "reason": "no se pudo traer el archivo"})
@@ -186,9 +202,9 @@ async def whatsapp_webhook(request: Request, db: Session = Depends(get_db)) -> J
             settings.raw_store_dir,
             paths=[temporal],
             source_type=SourceType.WHATSAPP_CHANNEL,
-            source_reference=channel.name,
+            source_reference=canal_nombre,
             captured_at=mensaje.timestamp,
-            channel_id=channel.id,
+            channel_id=canal_id,
             sender_hash=mensaje.sender_hash,
         )
     finally:
@@ -196,7 +212,7 @@ async def whatsapp_webhook(request: Request, db: Session = Depends(get_db)) -> J
 
     if report.ingested:
         logger.info(
-            "webhook.ingerido canal=%s %s", channel.name, _contexto(mensaje=mensaje)
+            "webhook.ingerido canal=%s %s", canal_nombre, _contexto(mensaje=mensaje)
         )
     elif report.duplicates:
         # INFO y no WARNING: WAHA manda DOS eventos por cada mensaje (los POST
@@ -204,7 +220,7 @@ async def whatsapp_webhook(request: Request, db: Session = Depends(get_db)) -> J
         # mitad del tráfico normal y no una pérdida.
         logger.info(
             "webhook.descartado motivo=duplicado canal=%s %s",
-            channel.name,
+            canal_nombre,
             _contexto(mensaje=mensaje),
         )
     else:
@@ -212,7 +228,7 @@ async def whatsapp_webhook(request: Request, db: Session = Depends(get_db)) -> J
         # porque el sufijo lo elige este mismo módulo.
         logger.warning(
             "webhook.descartado motivo=ingesta_salteada canal=%s %s",
-            channel.name,
+            canal_nombre,
             _contexto(mensaje=mensaje),
         )
 

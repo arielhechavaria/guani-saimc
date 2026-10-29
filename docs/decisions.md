@@ -13126,3 +13126,9 @@ Contexto: Control avisaba «La tasa de EUR tiene 12 días». El cache de tasas s
 Decisión: `RateStatus.in_use` (filas de precio de esa moneda en los últimos 30 días); `rate_indicator` alarma solo por monedas en uso. Si ninguna se usa, muestra la más nueva sin alarma.
 Descartado: refrescar las tasas con un temporizador (agrega una pieza que mantener para convertir nada); subir `_STALE_RATE_DAYS` (esconde el atraso real de una moneda que sí se usa).
 Consecuencia: si empiezan a entrar anuncios en euros, la edad de su tasa vuelve a alarmar.
+
+## 2026-10-29 — El webhook de WhatsApp ya no bloquea el event loop ni retiene la transacción
+Contexto: `guani.app` quedó caído (502). WAHA reenviaba un backlog de eventos y el handler `async def` hacía dentro del loop la búsqueda del canal, la descarga de la foto (hasta `waha_timeout` = 30 s) y la ingesta. Con ~900 conexiones abiertas, uvicorn llegó a su tope de 1024 archivos y Postgres tenía 45 conexiones `idle in transaction`: la búsqueda del canal abría una transacción que seguía abierta durante la descarga.
+Decisión: el handler solo lee y valida el body; el resto corre en el threadpool (`run_in_threadpool`). Tras buscar el canal se hace `commit()` para soltar la conexión antes de tocar la red.
+Descartado: una cola de trabajos (decisión cerrada 3: no hay carga que lo justifique, el problema era bloquear el loop); subir `LimitNOFILE` (esconde el síntoma).
+Consecuencia: una ráfaga de descargas lentas todavía puede ocupar el threadpool (40 hilos), pero ya no congela la web entera. Si vuelve a pasar, el siguiente paso es acotar la concurrencia del webhook.

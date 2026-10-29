@@ -11,6 +11,7 @@ verificado 2026-08-15) — no contra una instancia real, que todavía no existe.
 El caso esperado se define acá, independientemente de correr WAHA.
 """
 
+import asyncio
 import hashlib
 import hmac
 import json
@@ -724,6 +725,49 @@ class TestWebhookFotoSinCaption:
 
         assert response.status_code == 200
         assert _ingestas(session) == []
+
+    def test_la_descarga_corre_fuera_del_event_loop(
+        self, client: TestClient, session: Session, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Una descarga lenta dentro del `async def` congelaba TODO el servidor
+        (2026-10-29: `guani.app` caído por una ráfaga de reintentos de WAHA)."""
+        _canal(session)
+        en_el_loop: list[bool] = []
+
+        def _espia(*a: object, **k: object) -> bytes:
+            try:
+                asyncio.get_running_loop()
+            except RuntimeError:
+                en_el_loop.append(False)
+            else:
+                en_el_loop.append(True)
+            return b"\xff\xd8bytes-de-la-foto"
+
+        monkeypatch.setattr("saimc.web.routers.whatsapp_webhook.fetch_media", _espia)
+
+        self._post(client, self._payload_foto())
+
+        assert en_el_loop == [False]
+
+    def test_la_descarga_no_retiene_una_transaccion_de_la_base(
+        self, client: TestClient, session: Session, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """La búsqueda del canal abre una transacción; si sigue abierta durante
+        la descarga, una ráfaga agota el pool de Postgres con conexiones
+        `idle in transaction`."""
+        _canal(session)
+        abierta: list[bool] = []
+
+        def _espia(*a: object, **k: object) -> bytes:
+            abierta.append(session.in_transaction())
+            return b"\xff\xd8bytes-de-la-foto"
+
+        monkeypatch.setattr("saimc.web.routers.whatsapp_webhook.fetch_media", _espia)
+
+        self._post(client, self._payload_foto())
+
+        assert abierta == [False]
+        assert len(_ingestas(session)) == 1
 
     def test_una_url_de_otro_host_no_se_descarga(
         self, client: TestClient, session: Session, monkeypatch: pytest.MonkeyPatch
