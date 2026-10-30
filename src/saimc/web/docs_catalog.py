@@ -237,6 +237,18 @@ CATALOG: tuple[DocEntry, ...] = (
         standing="interno",
     ),
     DocEntry(
+        slug="plan-prediccion",
+        title="Plan — módulo predictivo v1 (2026-10-29)",
+        summary=(
+            "Predecir alzas de precio por la caída de la frecuencia de anuncios: "
+            "el episodio del arroz, qué dice la literatura, las trampas de "
+            "nuestros datos y las tareas T1–T10 por slice, en modo sombra hasta "
+            "que la regla le gane a la persistencia."
+        ),
+        relative_path="docs/plan-prediccion.md",
+        standing="interno",
+    ),
+    DocEntry(
         slug="reporte-estado",
         title="Reporte de estado del sistema (2026-10-16)",
         summary=(
