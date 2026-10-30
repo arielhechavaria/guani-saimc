@@ -1,0 +1,55 @@
+{#
+  Página 404 (2026-10-30). Hereda la cabecera y el pie de las páginas de texto
+  y pone encima una escena: el sol de la portada (el guayaba del ocaso) bajando
+  sobre el horizonte, con una nube que cruza. Solo CSS, sin JavaScript, sin
+  imágenes y sin nada pedido a una red ajena (DESIGN.md, regla 7).
+
+  La escena usa los tokens `--ph-dusk-*`, que no tienen versión oscura a
+  propósito (es el cielo, como en la landing). El texto va fuera de ella, sobre
+  la superficie, nunca sobre el degradado (regla 4). Con
+  `prefers-reduced-motion` el sol queda quieto a media altura.
+#}
+{% extends "public_page.html" %}
+
+{% block title %}Página no encontrada{% endblock %}
+{% block og_description %}Esta página no existe en Guani. Vuelve a los precios del mercado informal cubano.{% endblock %}
+{% block lead %}No encontramos lo que buscabas. Puede que el enlace esté mal escrito o que la página ya no exista.{% endblock %}
+
+{% block head %}
+{{ super() }}
+<meta name="robots" content="noindex" />
+<style>
+  .nf-scene { position: relative; height: 200px; margin: 28px 0 0; border-radius: 24px; overflow: hidden;
+              background: linear-gradient(to bottom, var(--ph-dusk-noche), var(--ph-dusk-indigo) 45%,
+                                          var(--ph-dusk-mamey) 80%, var(--ph-dusk-flama)); }
+  .nf-sun { position: absolute; left: 50%; bottom: 44px; width: 88px; height: 88px; margin-left: -44px;
+            border-radius: 50%; background: var(--ph-dusk-guayaba);
+            box-shadow: 0 0 0 14px var(--ph-dusk-guayaba-halo), 0 0 0 30px var(--ph-dusk-guayaba-borde);
+            animation: nf-set 6s ease-in-out infinite alternate; }
+  .nf-cloud { position: absolute; top: 36px; left: -90px; width: 84px; height: 22px; border-radius: 22px;
+              background: var(--ph-dusk-sil-lejos); opacity: .8; animation: nf-drift 18s linear infinite; }
+  .nf-cloud::before { content: ""; position: absolute; left: 16px; top: -12px; width: 34px; height: 24px;
+                      border-radius: 50%; background: inherit; }
+  .nf-ground { position: absolute; left: 0; right: 0; bottom: 0; height: 44px; background: var(--ph-dusk-noche); }
+  @keyframes nf-set { from { transform: translateY(-36px); } to { transform: translateY(36px); } }
+  @keyframes nf-drift { to { transform: translateX(calc(100vw + 180px)); } }
+  @media (prefers-reduced-motion: reduce) {
+    .nf-sun, .nf-cloud { animation: none; }
+    .nf-cloud { left: 24px; }
+  }
+  .nf-code { margin: 20px 0 0; font: 400 clamp(56px, 18vw, 88px)/1 var(--ph-font-heading);
+             color: var(--m3-on-surface-variant); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="nf-scene" aria-hidden="true">
+  <span class="nf-cloud"></span>
+  <span class="nf-sun"></span>
+  <span class="nf-ground"></span>
+</div>
+<p class="nf-code" aria-hidden="true">404</p>
+<div class="pg-actions">
+  <a class="pg-btn" href="/">Volver al inicio</a>
+</div>
+{% endblock %}

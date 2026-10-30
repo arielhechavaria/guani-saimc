@@ -15,6 +15,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from fastapi import FastAPI
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.templating import Jinja2Templates
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from saimc.config import get_settings
@@ -22,6 +23,7 @@ from saimc.ingestion.sender import warn_if_key_too_short
 from saimc.validation.jev_signal import warn_if_enabled_without_key
 from saimc.web import access, seo
 from saimc.web.analytics import registrar_visitas_publicas
+from saimc.web.error_pages import not_found_handler
 from saimc.web.routers import (
     catalog,
     control,
@@ -133,9 +135,7 @@ app.add_middleware(BaseHTTPMiddleware, dispatch=add_security_headers)
 # importar desde dónde se lance uvicorn. Vive en `app.state` (y no como
 # variable de módulo importada por los routers) para que `app.py` sea quien
 # monta la app sin crear un import circular con `routers/curation.py`.
-app.state.templates = Jinja2Templates(
-    directory=str(Path(__file__).parent / "templates")
-)
+app.state.templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 
 # StaticFiles no manda cache-busting: un navegador (sobre todo uno móvil,
 # con conexión intermitente que prefiere no volver a pedir un archivo) puede
@@ -281,6 +281,7 @@ app.mount(
     name="static",
 )
 
+app.add_exception_handler(StarletteHTTPException, not_found_handler)
 app.include_router(seo_router.router)
 app.include_router(access.router)
 app.include_router(public.router)
