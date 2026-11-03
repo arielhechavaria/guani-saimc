@@ -19,6 +19,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from saimc.models.raw_ingestion import (
@@ -122,6 +123,11 @@ def _move_to_duplicates(path: Path, inbox_dir: Path) -> None:
     shutil.move(str(path), str(target_dir / path.name))
 
 
+class DuplicateContentError(Exception):
+    """El contenido ya tenía fila cuando se intentó insertar (carrera entre
+    dos ingestas del mismo archivo). No es un fallo: es un duplicado."""
+
+
 def ingest_file(
     session: Session,
     path: Path,
@@ -189,6 +195,17 @@ def ingest_file(
         )
         session.add(ingestion)
         session.flush()
+    except IntegrityError as error:
+        session.rollback()
+        if _hash_exists(session, content_hash):
+            # Carrera: otro request con el mismo contenido insertó primero (WAHA
+            # entrega el mismo mensaje dos veces en paralelo). `stored_path` es
+            # ahora la evidencia de la fila ganadora, con bytes idénticos: no se
+            # toca. Devolverla a la bandeja la perdía, porque el webhook borra
+            # lo que queda ahí.
+            raise DuplicateContentError(content_hash) from error
+        shutil.move(str(stored_path), str(origin))
+        raise
     except Exception:
         # Devolver la evidencia a la bandeja para no perderla ni dejarla huérfana.
         shutil.move(str(stored_path), str(origin))
@@ -229,16 +246,20 @@ def ingest_inbox(
             report.duplicates.append(path.name)
             continue
 
-        ingest_file(
-            session,
-            path,
-            store_dir,
-            source_type=source_type,
-            source_reference=source_reference,
-            captured_at=captured_at,
-            channel_id=channel_id,
-            sender_hash=sender_hash,
-        )
+        try:
+            ingest_file(
+                session,
+                path,
+                store_dir,
+                source_type=source_type,
+                source_reference=source_reference,
+                captured_at=captured_at,
+                channel_id=channel_id,
+                sender_hash=sender_hash,
+            )
+        except DuplicateContentError:
+            report.duplicates.append(path.name)
+            continue
         session.commit()
         report.ingested.append(path.name)
 

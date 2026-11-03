@@ -3,9 +3,11 @@
 import hashlib
 from pathlib import Path
 
+import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from saimc.ingestion import inbox
 from saimc.ingestion.inbox import (
     DUPLICATES_DIRNAME,
     classify,
@@ -187,6 +189,41 @@ class TestIngestInbox:
 
         assert report.duplicates == ["anuncio-copia.txt"]
         assert len(_rows(session)) == 1
+
+    def test_carrera_de_duplicado_no_borra_la_evidencia_del_ganador(
+        self,
+        session: Session,
+        inbox_dir: Path,
+        store_dir: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Dos eventos idénticos en paralelo (WAHA entrega el mismo mensaje con
+        ids distintos) pasan ambos `_hash_exists` antes de que alguno inserte.
+        El perdedor choca con el índice único: no puede devolver a la bandeja
+        el archivo del ganador (el webhook lo borra), ni responder 500."""
+        _write_image(inbox_dir, "a.jpg", b"\x89PNG mismo contenido")
+        ingest_inbox(session, inbox_dir, store_dir)
+        guardado = next(store_dir.iterdir())
+        assert guardado.is_file()
+
+        # El perdedor de la carrera no ve al ganador al revisar el hash.
+        # Solo la primera revisión se equivoca; tras el choque ya lo ve.
+        verdadero = inbox._hash_exists
+        llamadas: list[int] = []
+
+        def _primera_vez_no_lo_ve(session: Session, content_hash: str) -> bool:
+            llamadas.append(1)
+            return False if len(llamadas) == 1 else verdadero(session, content_hash)
+
+        monkeypatch.setattr(inbox, "_hash_exists", _primera_vez_no_lo_ve)
+        _write_image(inbox_dir, "b.jpg", b"\x89PNG mismo contenido")
+        report = ingest_inbox(session, inbox_dir, store_dir)
+
+        assert report.duplicates == ["b.jpg"]
+        assert report.ingested == []
+        assert guardado.is_file()
+        assert len(_rows(session)) == 1
+        assert list(inbox_dir.glob("*.jpg")) == []
 
     def test_los_duplicados_no_se_borran(
         self, session: Session, inbox_dir: Path, store_dir: Path

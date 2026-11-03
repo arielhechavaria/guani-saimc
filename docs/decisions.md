@@ -13144,3 +13144,9 @@ Contexto: una ruta inexistente devolvía el `{"detail":"Not Found"}` de FastAPI,
 Decisión: `web/error_pages.py` registra un manejador de `HTTPException`; ante un 404 cuyo `Accept` incluye `text/html` y que no viene de htmx, responde `public_404.html` (hereda de `public_page.html`) con una escena de ocaso solo en CSS que respeta `prefers-reduced-motion`. Todo lo demás —otros códigos, `curl`, htmx, `<img>`, JSON— conserva su respuesta.
 Descartado: servir la página a todo 404 (rompería los parciales de htmx y los 404 de evidencia que consume un `<img>`); animación con JS o Lottie (DESIGN.md, regla 7, y la conexión del visitante cubano).
 Consecuencia: la página lleva `noindex`. Un 404 lanzado desde las rutas del operador también la recibe si lo abre un navegador.
+
+## 2026-11-03 — Un duplicado en carrera no borra la evidencia del ganador
+Contexto: desde el 2026-10-31 WAHA entrega el mismo mensaje dos veces en paralelo. Ambas peticiones pasaban `_hash_exists`, ambas movían su archivo a `data/raw/<hash>.ext` y la segunda chocaba con `idx_raw_ingestions_hash`; su `except` devolvía a la bandeja el archivo de la fila ya confirmada y el webhook lo borraba. 402 filas quedaron sin archivo (208 imágenes, 194 textos) y 402 respuestas fueron 500.
+Decisión: `ingest_file` atrapa `IntegrityError`, hace rollback y, si el hash ya existe, lanza `DuplicateContentError` sin tocar el archivo guardado; `ingest_inbox` lo cuenta como duplicado. Cualquier otro fallo sigue devolviendo el archivo a la bandeja.
+Descartado: un candado por hash en el webhook (más maquinaria para un caso que el índice único ya resuelve) y deduplicar por id de mensaje de WAHA (los ids pueden diferir entre entregas).
+Consecuencia: las 402 filas ya perdidas no se reparan solas: los textos siguen en `original_text`; las imágenes solo se recuperan si WAHA conserva el medio.
