@@ -184,6 +184,10 @@ def _transcribe_tesseract(path: Path, lang: str) -> str:
         pytesseract.TesseractNotFoundError,
         FileNotFoundError,
         UnidentifiedImageError,
+        # Imagen truncada (descarga cortada): PIL la abre y falla recién al
+        # decodificar con un `OSError` pelado. Sin esto una sola captura rota
+        # tumbaba el pre-cálculo entero, en cada ciclo, hasta sacarla a mano.
+        OSError,
     ):
         return ""
 

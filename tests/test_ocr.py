@@ -218,6 +218,18 @@ class TestTranscribeMockeado:
 
         assert ocr.transcribe(corrupta) == ""
 
+    def test_imagen_truncada_devuelve_string_vacio(self, tmp_path: Path) -> None:
+        """Una descarga cortada deja un PNG con cabecera válida y cuerpo
+        incompleto: PIL la abre y falla recién al decodificar (`OSError`).
+        No puede tumbar el pre-cálculo entero por una sola captura."""
+        completa = tmp_path / "completa.png"
+        Image.effect_noise((200, 200), 80).save(completa)
+        truncada = tmp_path / "truncada.png"
+        datos = completa.read_bytes()
+        truncada.write_bytes(datos[: len(datos) // 2])
+
+        assert ocr.transcribe(truncada) == ""
+
     def test_error_no_previsto_se_propaga(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
