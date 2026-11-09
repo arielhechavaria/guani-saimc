@@ -4,8 +4,9 @@ Orden de lectura para quien se suma al proyecto. No es un documento más del
 catálogo, es la secuencia: qué abrir primero, segundo y así, antes de tocar
 código o proponer nada.
 
-1. **[README](/docs/readme)** — qué es Guani, cómo se corre, qué vistas
-   existen. El punto de entrada.
+1. **[README](/docs/readme)** — qué es Guani, explicado sin tecnicismos. El
+   punto de entrada. Cómo se instala y se corre está en
+   [Puesta en marcha](/docs/desarrollo).
 2. **[Mapa de la especificación](/docs/spec-map)** — traduce cada tema a la
    sección de `spec.md` que lo decide. Se consulta por tema, no se lee
    `spec.md` entero de punta a punta.

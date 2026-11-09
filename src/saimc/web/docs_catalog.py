@@ -143,8 +143,15 @@ CATALOG: tuple[DocEntry, ...] = (
     DocEntry(
         slug="readme",
         title="README",
-        summary="Puerta de entrada al repositorio: qué es, cómo se corre, qué vistas hay.",
+        summary="Puerta de entrada pública: qué es Guani, para quién y cómo funciona, sin tecnicismos.",
         relative_path="README.md",
+        standing="rige",
+    ),
+    DocEntry(
+        slug="desarrollo",
+        title="Puesta en marcha y rutina del operador",
+        summary="Cómo se instala, se corre y se usa la cola de curaduría; qué vistas hay.",
+        relative_path="docs/desarrollo.md",
         standing="rige",
     ),
     DocEntry(
