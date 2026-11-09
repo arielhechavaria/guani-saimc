@@ -1,10 +1,10 @@
 <p align="center">
   <a href="https://guani.app">
-    <img src="src/saimc/web/static/seo/og-guani.png" alt="Guani: parece un relajo, pero tiene su orden. Precios por provincia, con sus anuncios a la vista." width="100%">
+    <img src="docs/img/banner.png" alt="Guani: medimos el mercado con la misma vara. Precios por provincia, cada uno con sus anuncios." width="100%">
   </a>
 </p>
 
-<p align="center"><strong>Medimos el mercado con la misma vara.</strong> · <a href="https://guani.app">guani.app</a></p>
+<p align="center"><a href="https://guani.app">guani.app</a></p>
 
 Guani reúne los anuncios que emprendedores, TCP y negocios privados publican en
 grupos y canales de WhatsApp, los convierte en una referencia de precios por
