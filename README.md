@@ -46,6 +46,29 @@ Guani junta miles como ese y responde con una cifra y con su cuenta:
 Cada cifra dice cuántos anuncios tiene detrás. Si son pocos, queda rotulada como
 «muestra en formación» en lugar de presentarse como un dato firme.
 
+## Cómo se ve
+
+Guani está pensado primero para el teléfono, que es desde donde se consulta.
+Tres vistas, tres preguntas:
+
+<table align="center">
+  <tr>
+    <td align="center" width="33%">
+      <img src="src/saimc/web/static/landing/entradas-mapa.webp" alt="Mapa de Cuba con el precio por provincia y el selector de productos" width="240"><br>
+      <strong>Mapa</strong><br><sub>¿Cuánto se pide en mi provincia?</sub>
+    </td>
+    <td align="center" width="33%">
+      <img src="src/saimc/web/static/landing/entradas-tablero.webp" alt="Tablero que compara dos provincias y explica por qué confiar en las cifras" width="240"><br>
+      <strong>Tablero</strong><br><sub>¿Dónde es más barato, y por qué confiar?</sub>
+    </td>
+    <td align="center" width="33%">
+      <img src="src/saimc/web/static/landing/entradas-explorar.webp" alt="Tabla para explorar precios por provincia y formato de venta" width="240"><br>
+      <strong>Explorar</strong><br><sub>Todos los datos, por formato de venta.</sub>
+    </td>
+  </tr>
+</table>
+<p align="center"><sub>Capturas de la versión móvil. Las cifras cambian a diario.</sub></p>
+
 ## Cómo funciona
 
 1. **Se leen los anuncios.** Los mensajes de los grupos y canales que Guani sigue
