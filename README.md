@@ -1,13 +1,17 @@
-# Guani
+<p align="center">
+  <img src="docs/presentacion-instituciones/avatar.png" alt="Guani" width="120">
+</p>
 
-**Medimos el mercado con la misma vara.**
+<h1 align="center">Guani</h1>
+
+<p align="center"><strong>Medimos el mercado con la misma vara.</strong></p>
+
+<p align="center"><a href="https://guani.app">guani.app</a></p>
 
 Guani reúne los anuncios que emprendedores, TCP y negocios privados publican en
 grupos y canales de WhatsApp, los convierte en una referencia de precios por
 producto y por provincia, y deja que cualquiera compruebe de dónde sale cada
 cifra.
-
-**Verlo funcionando:** [guani.app](https://guani.app)
 
 ---
 
@@ -25,15 +29,19 @@ Guani no lo impone. Lo hace visible.
 > ¿Cuánto se pide hoy por una libra de arroz en La Habana?
 
 Hoy, quien quiere saberlo pregunta en diez grupos distintos y se queda con una
-impresión. Guani responde con una cifra y con su cuenta:
+impresión. Todo empieza con anuncios como este, publicados en grupos de venta:
 
-| Arroz, paquete de 1 kg, La Habana | |
-| --- | --- |
-| Anuncios detrás de la cifra | 53 |
-| Rango | 315 – 408 CUP por libra |
-| Precio del medio (mediana) | 353 CUP por libra |
+<p align="center">
+  <img src="docs/presentacion-instituciones/anuncio.png" alt="Anuncio de venta en un grupo de WhatsApp: muslos de pollo, 40 USD o 27400 CUP la caja, disponible en Cotorro" width="380">
+</p>
+<p align="center"><sub>Ejemplo de anuncio (recreado).</sub></p>
 
-*Cifras del 20 de octubre de 2026. El sitio muestra siempre las del día.*
+Guani junta miles como ese y responde con una cifra y con su cuenta:
+
+<p align="center">
+  <img src="docs/presentacion-instituciones/arroz-habana.png" alt="Arroz en La Habana: paquete de 1 kg, 353 CUP por libra, rango 315 a 408, 53 anuncios detrás de la cifra" width="720">
+</p>
+<p align="center"><sub>Cifras del 20 de octubre de 2026. El sitio muestra siempre las del día.</sub></p>
 
 Cada cifra dice cuántos anuncios tiene detrás. Si son pocos, queda rotulada como
 «muestra en formación» en lugar de presentarse como un dato firme.
