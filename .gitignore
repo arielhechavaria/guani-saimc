@@ -38,5 +38,7 @@ backups/
 *.swp
 .idea/
 
-# Worktrees temporales de agentes (repos embebidos, nunca parte del proyecto)
-.claude/worktrees/
+# Herramientas y proceso de trabajo con agentes: locales, no forman parte del proyecto publicado
+.claude/
+CLAUDE.md
+openspec/
